@@ -14,7 +14,7 @@
 
 set script_dir (dirname (status -f))
 set gpg_home (realpath $script_dir)/.gpg
-set uid 'Pulse Flatpak Repo (com.unicutmedia.Pulse) <249562202+oblivion8282-1337@users.noreply.github.com>'
+set uid 'Pulse Flatpak Repo (com.howispulse.Pulse) <249562202+oblivion8282-1337@users.noreply.github.com>'
 
 if test -d $gpg_home
     echo "✗ $gpg_home already exists — nothing to do."

@@ -4,116 +4,97 @@
 //! D3D11VA-Pool, von dem der Encoder direkt liest. Kein PCIe-Hin-und-Her, kein
 //! BGRA→NV12-swscale auf der CPU. Downscale per `D3D11Scaler` (VideoProcessor).
 //!
-//! Aktiv NUR für NVIDIA — h264_nvenc nimmt D3D11-BGRA-Frames direkt. AMD läuft
-//! über `pipeline_d3d12` (nativer h264_d3d12va), Intel über die CPU-Pipeline
-//! (`run_cpu_pipeline`): h264_amf stürzt auf D3D11-Surface-Input ab
-//! (dokumentierter AMD-AMF-Treiber-Bug, AMF-Issue #455). Da `select_adapter()`
-//! auf Multi-GPU die dGPU statt der Display-GPU liefern kann, verifiziert
-//! `run` die echte WGC-Capture-GPU und delegiert bei !=nvidia selbst an
-//! `pipeline_d3d12` bzw. `run_cpu_pipeline`. Kill-Switch
-//! `PULSE_HQ_DISABLE_ZERO_COPY=1` → CPU-Pfad.
+//! Aktiv für **NVIDIA** und für **AMD** (`h264_nvenc`/`hevc_nvenc`/`av1_nvenc`
+//! bzw. `h264_amf`/`hevc_amf`/`av1_amf` nehmen D3D11-BGRA-Frames direkt
+//! entgegen), Intel über die CPU-Pipeline (`run_cpu_pipeline`). **Welche
+//! (Vendor, Codec)-Kombination hier statt über `pipeline_d3d12` läuft, steht
+//! an genau einer Stelle** — `VideoCodec::encode_path` (`encode/codec.rs`),
+//! hier nicht zweitgefasst; die Tabelle hat sich schon einmal verschoben
+//! (2026-08-04, AMD ging vorher nur mit AV1 diesen Weg, H.264/HEVC über
+//! `pipeline_d3d12`) und kann es wieder.
 //!
-//! Der Encoder-Vendor wird aus der echten WGC-D3D11-Device-GPU abgeleitet
-//! (`device_vendor`), NICHT aus `select_adapter()` — letzteres bevorzugt die
-//! dGPU, die WGC-Device-GPU folgt aber dem primären Display.
+//! **Warum AV1 auf AMD hier bleibt, ohne Gegenprobe-Schalter.** Über D3D12
+//! ist AV1 auf AMD nicht benutzbar (`av1_d3d12va` liefert einen Bitstrom, den
+//! kein Decoder liest — Messung in `pipeline_d3d12::run`), und der frühere
+//! Ausweg über die CPU-Pipeline kostete gemessen 113 % eines CPU-Kerns und 42
+//! übersprungene Bilder in 20 s; über diesen Pfad sind daraus 9 % und 2
+//! geworden. Voraussetzung ist der **Einzeltextur-Pool** für AMD (`hwctx.rs`):
+//! über den Texture-Array-Pool, den NVIDIA nutzt, liefert AMF ein zerrissenes
+//! Bild (Herleitung am Wert in `HwContext::new`). Für AMD-H.264/HEVC gab es
+//! denselben Grund dagegen nicht (`h264_d3d12va` funktioniert, und `h264_amf`
+//! hat mit D3D11-Eingang die Vorgeschichte aus AMF-Issue #455) — deshalb
+//! tragen die beiden einen Gegenprobe-Schalter zurück auf D3D12
+//! (`PULSE_HQ_AMD_D3D12=1`, Begründung an `amd_forces_d3d12` in
+//! `encode/codec.rs`) und AV1 nicht.
+//!
+//! Da `select_adapter()` auf Multi-GPU die dGPU statt der Display-GPU liefern
+//! kann, verifiziert `run` die echte WGC-Capture-GPU und delegiert bei einer
+//! unpassenden Vendor/Codec-Kombination selbst an `pipeline_d3d12` bzw.
+//! `run_cpu_pipeline`. Kill-Switch `PULSE_HQ_DISABLE_ZERO_COPY=1` → CPU-Pfad.
+//!
+//! Capture-Start + Warten auf das erste Bild sitzt in [`capture_start`] —
+//! herausgezogen, weil diese Datei mit den Messbegründungen über die harte
+//! Größen-Grenze von 500 Zeilen gewachsen war (`PLAN.md` §12.1). Eigener
+//! Verantwortungsbereich: bevor überhaupt feststeht, welcher Encode-Weg oder
+//! Skalierer gebraucht wird, muss erst ein Bild da sein.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
+use ffmpeg_next::ffi::AVPixelFormat;
 use serde_json::json;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
-use windows::Win32::Graphics::Direct3D11::ID3D11Device;
-use windows::core::Interface;
 
 use crate::audio::AudioCapture;
-use crate::capture::wgc::CaptureConfig;
-use crate::capture::{HwCaptureItem, WgcHwCapture};
+use crate::capture::HwCaptureItem;
 use crate::encode::{
-    AudioStreamConfig, D3D11Scaler, FfmpegHwEncoder, HwEncoderConfig, OwnedHwFrame, VideoCodec,
+    AudioStreamConfig, D3D11Scaler, EncodePath, HwEncoderConfig, OwnedHwFrame,
 };
 use crate::events;
 use crate::stream_controller::{StartParams, StreamController};
 use crate::system::dxgi::Adapter;
 use crate::tick_monitor::{TickMonitor, TickSample};
 
+mod capture_start;
+
 pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Result<()> {
     let ctrl = StreamController::singleton();
 
     let fps = params.override_fps.unwrap_or(params.profile.fps);
-    let codec = params.override_codec.unwrap_or(match params.profile.codec {
-        "h264" => VideoCodec::H264,
-        "hevc" => VideoCodec::Hevc,
-        "av1" => VideoCodec::Av1,
-        _ => VideoCodec::H264,
-    });
+    let codec = params.codec();
     let bitrate = params
         .override_bitrate_kbps
         .unwrap_or(params.profile.bitrate_kbps);
 
-    // Capture-D3D11VA-Pool: versorgt Capture-Queue + (im Native-Pfad) die
-    // NVENC-In-Flight-Tiefe. Im Downscale-Pfad hat der Scaler einen eigenen
-    // Ziel-Pool, dann muss dieser hier nur Capture-Queue + Scaler-Input-Halt
-    // bedienen — 24 ist für beide Fälle robust.
-    let mut capture = WgcHwCapture::start(
-        params.capture.clone(),
-        CaptureConfig { max_fps: fps, include_cursor: params.show_cursor, ..Default::default() },
-        24,
-    )?;
-
-    // Setup-Item warten (mit erstem Pool-Frame). Bei Disconnect den echten
-    // Capture-Fehler aus dem Worker-JoinHandle ziehen (`join_error`) — sonst
-    // geht die Root-Cause (WGC-Close ohne Frame / HwContext::new-Fehler / …)
-    // verloren und nur „channel disconnected" bleibt übrig. Timeout vs.
-    // Disconnected trennen: Ersteres = WGC liefert nie (Target/Permission/HDR),
-    // Zweiteres = Capture-Thread ist tatsächlich gecrasht/zu Ende.
-    let setup = match capture.items.recv_timeout(Duration::from_secs(5)) {
-        Ok(item) => item,
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            return Err(anyhow!(
-                "hw capture lieferte innerhalb von 5 s keinen ersten Frame \
-                 (WGC-Capture startete, aber lieferte nichts — Target/Permission/HDR-Verdacht)"
-            ));
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            let worker_err = capture.join_error();
-            return Err(anyhow!(
-                "hw capture exit vor dem ersten Frame{}",
-                worker_err
-                    .map(|s| format!(": {s}"))
-                    .unwrap_or_else(|| " (Thread clean beendet, nie ein Frame geliefert)".into())
-            ));
-        }
-    };
-    // Wall-clock-Zeitpunkt des Video-Origins (≈ first_qpc). Audio-Chunks ohne
-    // QPC ankern hieran — NICHT an `started` (das liegt erst NACH der Encoder-
-    // Erzeugung; der Setup-Versatz würde zum konstanten A/V-Offset).
-    let origin_instant = Instant::now();
-    let (hw, width, height, first, first_qpc) = match setup {
-        HwCaptureItem::Setup { hw, width, height, first, first_qpc } => {
-            (hw, width, height, first, first_qpc)
-        }
-        HwCaptureItem::Frame { .. } => return Err(anyhow!("first item was Frame, expected Setup")),
-    };
+    let (capture, hw, width, height, first, first_qpc, origin_instant) =
+        capture_start::start_and_wait_for_setup(params.capture.clone(), fps, params.show_cursor)?;
     // Vendor der ECHTEN Capture/Encode-GPU (WGC-D3D11-Device). `adapter` aus
     // `select_adapter()` kann auf Multi-GPU eine andere GPU sein (dGPU-Default).
-    let vendor = device_vendor(hw.device()).unwrap_or_else(|| adapter.vendor());
+    // Massgeblich ist die GPU, auf der WGC sein Device gebaut hat (= die des
+    // primaeren Displays), nicht die aus `select_adapter()` — der Encoder muss
+    // zu ihr passen (h264_nvenc / h264_amf).
+    let vendor =
+        crate::system::dxgi::device_vendor(hw.device()).unwrap_or_else(|| adapter.vendor());
 
-    // Dieser D3D11-Zero-Copy-Pfad gilt NUR für NVIDIA — h264_amf (AMD) stürzt
-    // auf D3D11-Surface-Input ab (AMF-Runtime-Bug, AMF-Issue #455). Ist die
-    // echte Capture-GPU nicht NVIDIA → HW-Capture stoppen und delegieren:
-    // AMD → `pipeline_d3d12` (nativer h264_d3d12va), sonst → CPU-Pfad.
-    if vendor != "nvidia" {
+    // `encode_path` hier ein zweites Mal auswerten — jetzt mit dem ECHTEN
+    // Vendor der WGC-Capture-GPU. Der Dispatcher entscheidet auf
+    // `select_adapter()`, und das kann auf Multi-GPU die dGPU sein. Die Regel
+    // selbst steht nur einmal (`encode/encoder.rs`).
+    // Wohin delegiert wird, sagt `encode_path` selbst — die Zuordnung wird hier
+    // NICHT ein zweites Mal ausgeschrieben. Genau das war der Fehler, den die
+    // Zusammenführung in `encode_path` beseitigen sollte: zwei Fassungen
+    // derselben Regel laufen auseinander, sobald eine Zelle dazukommt.
+    let path = codec.encode_path(vendor, &params.push_url);
+    if path != EncodePath::D3d11ZeroCopy {
         drop(capture);
         drop(first);
         drop(hw);
-        if vendor == "amd" {
-            eprintln!("[pipeline-hw] Capture-GPU ist amd — Delegation an pipeline_d3d12");
-            return crate::pipeline_d3d12::run(params, stop_rx);
-        }
         eprintln!(
-            "[pipeline-hw] Capture-GPU ist {vendor}, nicht nvidia/amd — \
-             Delegation an den CPU-Pfad"
+            "[pipeline-hw] Capture-GPU ist {vendor}, Codec {codec:?} — Delegation an {path:?}"
         );
-        return crate::stream_controller::run_cpu_pipeline(params, stop_rx);
+        return match path {
+            EncodePath::D3d12ZeroCopy => crate::pipeline_d3d12::run(params, stop_rx, codec),
+            _ => crate::stream_controller::run_cpu_pipeline(params, stop_rx),
+        };
     }
     // Capture aspektwahrend in die Override-Box einpassen (`fit_within_box`:
     // kein Upscale, gerade Maße — deckt auch die NV12-Anforderung #7 ab). Bei
@@ -134,7 +115,7 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
 
     // Audio-Pipeline gleicher Pfad wie CPU-Variante (WASAPI → libopus → 2. Spur).
     let audio_capture: Option<AudioCapture> = params.audio.as_ref().and_then(|src| {
-        match AudioCapture::start(src.clone(), 1024) {
+        match AudioCapture::start(src.clone(), crate::encode::audio::capture_chunk_frames()) {
             Ok(c) => Some(c),
             Err(e) => {
                 eprintln!("[pipeline-hw] audio capture failed, video-only: {e:#}");
@@ -147,11 +128,46 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
         ..AudioStreamConfig::DEFAULT
     });
 
+    // 10 bit: Wunsch aus dem Request UND ein Codec, der ihn trägt. Die Regel
+    // steht am Codec (`supports_ten_bit`), nicht hier — sonst hätte der nächste
+    // Codec sie wieder zu suchen. Den Rest entscheidet der Ziel-Pool, und zwar
+    // an EINER Stelle (`bildencoder::pool_wahl`): dort weiss man, ob sich ein
+    // Encode-Weg angemeldet hat und welches Format der braucht.
+    let fremder = crate::encode::bildencoder::angemeldet();
+    let pool = crate::encode::bildencoder::pool_wahl(params.ten_bit && codec.supports_ten_bit());
+    // **Die Bittiefe kommt aus dem Pool zurück, nicht aus dem Wunsch.** Sonst
+    // liefe „10 bit" unverändert in die Encoder-Konfiguration weiter, während
+    // der Pool NV12 führt — ein Auftrag, der sich selbst widerspricht, ohne
+    // dass irgendwo etwas auffiele.
+    let ten_bit = pool.ten_bit;
+    if params.ten_bit && !ten_bit {
+        // Ein Nutzer, der einen 10-bit-Schalter umlegt und 8 bit bekommt, muss
+        // herausfinden können, warum — beide Gründe deshalb getrennt.
+        let grund = if !codec.supports_ten_bit() {
+            "nur mit AV1 (10-bit-H.264 waere High 10, das dekodiert kein Browser)"
+        } else {
+            "der angemeldete Encode-Weg verlangt einen 8-bit-Pool"
+        };
+        eprintln!("[pipeline-hw] 10 bit {grund} -> 8 bit");
+    }
+    let (dst_format, geteilt) = (pool.format, pool.geteilt);
+
     // Downscale-Pfad: GPU-Scaler (VideoProcessorBlt) zwischen Capture und
-    // Encoder. Der Scaler hat einen eigenen D3D11VA-Ziel-Pool (dst-res, BGRA,
+    // Encoder. Der Scaler hat einen eigenen D3D11VA-Ziel-Pool (dst-res,
     // +RENDER_TARGET) — der Encoder bindet dann diesen statt des Capture-Pools.
-    // Bei dst==src bleibt `scaler` None und der Encoder bindet den Capture-Pool.
-    let scaler = if (dst_w, dst_h) != (width, height) {
+    // Bei dst==src und 8 bit bleibt `scaler` None und der Encoder bindet den
+    // Capture-Pool direkt. Im 10-bit-Fall ist er auch OHNE Verkleinerung nötig:
+    // er ist die einzige Stelle, die BGRA nach P010 wandelt.
+    //
+    // **Die Bedingung fragt nach Eigenschaften, nicht nach Anmeldungen.**
+    // „Es hat sich jemand angemeldet" wäre hier die falsche Frage — sie gehört
+    // nicht in den ausgelieferten Ablauf, und sie verdeckt, worum es geht:
+    // unterscheidet sich der Ziel-Pool vom Aufnahme-Pool? Ein fremder Weg
+    // bekommt den Skalierer damit weiterhin immer (er verlangt NV12 oder
+    // geteilte Texturen, beides ≠ Aufnahme-Pool) — aber weil das zutrifft, und
+    // nicht weil er fremd ist.
+    let anderes_format = dst_format != AVPixelFormat::AV_PIX_FMT_BGRA;
+    let scaler = if (dst_w, dst_h) != (width, height) || anderes_format || geteilt {
         Some(
             D3D11Scaler::new(
                 hw.device().clone(),
@@ -165,8 +181,23 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
                 fps,
                 16,
                 hw.lock_ptr(), // Capture-Pool-Lock teilen → eine CS für Copy+Blt+NVENC (#2).
+                dst_format,
+                geteilt,
             )
             .map_err(|e| anyhow!("D3D11Scaler::new: {e:#}"))?,
+        )
+    } else if fremder.is_some() {
+        // **Abbrechen statt stillschweigend weitermachen.** Ohne Skalierer geht
+        // das Aufnahme-Bild direkt in den Encoder, und in das hat der
+        // Aufnahme-Faden längst geschrieben (`wgc_hw::copy_into_pool`) — die
+        // Zusage aus `BildEncoder::vor_dem_schreiben` (dort steht, was sonst
+        // passiert) ist auf diesem Weg gar nicht einzulösen. Heute unerreichbar;
+        // die Prüfung steht hier, damit die Zusage nicht davon abhängt, dass
+        // ein paar Zeilen weiter oben zufällig etwas anderes gilt.
+        bail!(
+            "angemeldeter Encode-Weg ohne eigenen Ziel-Pool: er verlangt weder ein anderes \
+             Pool-Format noch geteilte Texturen — dann kann die Pipeline ihm das Bild nicht \
+             vor dem Beschreiben zeigen"
         )
     } else {
         None
@@ -176,29 +207,64 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
         Some(s) => s.dst_frames_ref(),
         None => hw.frames_ref(),
     };
-    let make = |codec| {
-        FfmpegHwEncoder::create(
-            &HwEncoderConfig {
-                codec,
-                vendor: vendor.to_string(),
-                fps,
-                bitrate_kbps: bitrate,
-                dst_w,
-                dst_h,
-            },
-            hw_frames_ref,
-            audio_cfg.clone(),
-            &params.push_url,
-        )
+    let cfg = HwEncoderConfig {
+        codec,
+        vendor: vendor.to_string(),
+        fps,
+        bitrate_kbps: bitrate,
+        dst_w,
+        dst_h,
+        ten_bit,
     };
-    // AV1-NVENC gibt es erst ab Ada (RTX 40); ältere NVIDIA/Treiber liefern beim
-    // Öffnen "function not implemented". Dann auf H.264 zurückfallen statt failen.
-    let encoder = match (codec, make(codec)) {
-        (VideoCodec::Av1, Err(e)) => {
-            eprintln!("[pipeline-hw] av1 HW encoder nicht verfügbar ({e:#}) → Fallback H.264");
-            make(VideoCodec::H264)?
+    // SAFETY: `hw_frames_ref` zeigt auf den Frames-Kontext des Scalers oder des
+    // Capture-Pools. Beide leben in dieser Funktion (`scaler`, `hw`) und damit
+    // laenger als der Encoder, der hier entsteht; das Format passt zu den
+    // Bildern, die derselbe Pool spaeter liefert. `lock_ptr` gehoert dem
+    // Capture-`HwContext` und ueberlebt den Encoder ebenso.
+    use crate::encode::bildencoder::{Gebaut, baue_mit_rueckfall};
+    let gebaut = unsafe {
+        baue_mit_rueckfall(
+            &cfg,
+            hw_frames_ref,
+            hw.device(),
+            hw.device_context(),
+            hw.lock_ptr(),
+            audio_cfg,
+            &params.push_url,
+            vendor,
+        )
+    }?;
+    let encoder = match gebaut {
+        Gebaut::Encoder(enc) => enc,
+        Gebaut::AnD3d12 => {
+            // `audio_capture` MUSS mit weg. Ohne das liefe der WASAPI-Thread
+            // die ganze Laufzeit des delegierten Streams weiter, während
+            // `pipeline_d3d12` sich eine zweite Aufnahme startet — der
+            // verwaiste Kanal läuft voll und der Worker dreht danach dauerhaft
+            // in seiner Sende-Warteschleife.
+            drop(scaler);
+            drop(capture);
+            drop(first);
+            drop(hw);
+            drop(audio_capture);
+            // **Den angeforderten Codec weiterreichen, nicht H.264 einsetzen.**
+            // Hier stand bis 2026-08-04 fest `VideoCodec::H264`, anders als an
+            // den beiden Schwesterstellen (Z. 95 und `stream_controller`).
+            // Folge: ein AV1-Wunsch wurde beim Rückfall stillschweigend zu
+            // H.264 — der Stream lief, sah gesund aus und trug den falschen
+            // Codec.
+            //
+            // Seit AMD mit JEDEM Codec über AMF geht (`encode_path`), ist
+            // dieser Rückfall nicht mehr die Ausnahme für einen Randfall,
+            // sondern der Auffangweg für alles — die Verwechslung war damit
+            // deutlich leichter zu treffen als vorher.
+            //
+            // `pipeline_d3d12::run` weiß selbst, was es mit AV1 tut: es gibt
+            // sofort an den CPU-Weg ab (`av1_amf` mit Software-NV12). Teuer,
+            // aber es bleibt AV1 — und ein teurer Weg mit dem richtigen Codec
+            // schlägt einen billigen mit dem falschen.
+            return crate::pipeline_d3d12::run(params, stop_rx, codec);
         }
-        (_, r) => r?,
     };
 
     // ── Ab hier wird NICHTS mehr gedroppt ────────────────────────────────────
@@ -244,11 +310,9 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
     // relativ zum QPC des ersten Frames (origin_qpc); Audio am selben origin
     // verankert → exakter Offset ohne Kalibrierung. qpc_sync aus / origin_qpc==0
     // (Timestamp n/a) → Fallback auf reine Wall-clock. Kill: PULSE_HQ_NO_AV_OFFSET=1.
-    let qpc_sync = std::env::var("PULSE_HQ_NO_AV_OFFSET")
-        .map(|v| v.is_empty() || v == "0")
-        .unwrap_or(true)
-        && first_qpc != 0;
+    let qpc_sync = !crate::env::flag("PULSE_HQ_NO_AV_OFFSET") && first_qpc != 0;
     let origin_qpc = first_qpc;
+    crate::syncprobe::video_origin(origin_qpc);
     let mut newest_qpc = first_qpc;
     // Anker muss zum tatsächlichen Video-Origin passen: mit QPC-Sync ist PTS 0
     // der erste Frame (origin_instant), ohne die Wanduhr-Basis der Loop.
@@ -314,9 +378,10 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
                     let worker_err = capture.join_error();
                     return Err(anyhow!(
                         "hw capture channel disconnected mid-stream{}",
-                        worker_err
-                            .map(|s| format!(": {s}"))
-                            .unwrap_or_else(|| " (clean exit, keine Fehlermeldung)".into())
+                        crate::capture::worker_err_suffix(
+                            worker_err,
+                            "clean exit, keine Fehlermeldung"
+                        )
                     ));
                 }
             }
@@ -370,7 +435,11 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
                 // dann den skalierten Frame encoden.
                 Some(s) => {
                     let t_conv = Instant::now();
-                    let mut scaled = s.scale(frame)?;
+                    // Der Encoder bekommt das Ziel-Bild ZU SEHEN, bevor der
+                    // Video-Prozessor hineinschreibt — Begründung an
+                    // `BildEncoder::vor_dem_schreiben`. Für den Regelweg ist
+                    // das ein leerer Aufruf.
+                    let mut scaled = s.scale_mit(frame, |ziel| encoder.vor_dem_schreiben(ziel))?;
                     convert = t_conv.elapsed();
                     encoder.send_hw(&mut scaled, pts)?;
                 }
@@ -397,6 +466,7 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
             pts,
             pts_delta: pts - prev_pts,
             capture_drops: capture.dropped(),
+            enc_latency: encoder.take_encode_latency(),
         });
         prev_pts = pts;
 
@@ -421,19 +491,3 @@ pub fn run(adapter: Adapter, params: StartParams, stop_rx: Receiver<()>) -> Resu
     Ok(())
 }
 
-/// Vendor-Slug der GPU hinter einem D3D11-Device — via `IDXGIDevice::GetAdapter`.
-/// Maßgeblich ist die GPU, auf der WGC sein Device gebaut hat (= die des
-/// primären Displays); der Encoder muss dazu passen (h264_nvenc / h264_amf).
-/// `None` wenn die Abfrage fehlschlägt oder der Vendor unbekannt ist.
-fn device_vendor(device: &ID3D11Device) -> Option<&'static str> {
-    use windows::Win32::Graphics::Dxgi::IDXGIDevice;
-    let dxgi: IDXGIDevice = device.cast().ok()?;
-    let adapter = unsafe { dxgi.GetAdapter() }.ok()?;
-    let desc = unsafe { adapter.GetDesc() }.ok()?;
-    match desc.VendorId {
-        0x10DE => Some("nvidia"),
-        0x1002 => Some("amd"),
-        0x8086 => Some("intel"),
-        _ => None,
-    }
-}

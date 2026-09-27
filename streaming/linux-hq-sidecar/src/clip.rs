@@ -3,18 +3,17 @@
 //! letzten Sekunden in eine Datei gestemmt — OHNE Neukodierung, ohne
 //! zusaetzliche Aufnahme, ohne Extra-Last. Die Vorlage ist der Recorder
 //! des Pulse-Players (`pulse-player/src/recorder.rs`, dort 2026-09-27
-//! E2E-geprüft); dieser hier ist die auf den Sender reduzierte Fassung:
+//! E2E-geprüft); diese hier ist die auf den Sender reduzierte Fassung:
 //! eigener Codec-Enum, LEB128 mitgenommen, dieselben drei Lehren aus dem
 //! Player verbaut (strikte Stempel je Spur fuer MPEG-TS, Bildrate als
 //! Metadatum, keine Leerdatei nach leergebliebenem Schnitt).
 //!
-//! Zwei Einspeisestellen teilen sich den Ring: die Video-Schleife
-//! (`encode::VideoEncoder::drain_video`) und der Ton-Faden
-//! (`encode::audio`), beide ueber die globalen [`push_video`]/
-//! [`push_audio`]. Die Zeitstempel kommen aus den Encoder-Uhren
-//! (Video 1/90000, Ton 1/48000), werden hier je Spur auf Millisekunden
-//! relativ zum ersten Video-Bild gerechnet — beide Uhren starten mit dem
-//! Strom, die Ms laufen also weitgehend gemeinsam.
+//! BITGLEICH in linux/win/mac-hq-sidecar gehalten (Zwillinge-Test). Die
+//! Einspeisestellen liegen je Sidecar im Encode-Pfad; hier ist die API
+//! plattformneutral in Millisekunden, damit die Datei keine Plattform
+//! kennt: [`push_video`] und [`push_audio`] rechnen niemandem eine
+//! Zeitbasis um — der Aufrufer kennt seine (Video meist 1/90000, Ton
+//! 1/48000; der Mac-Sidecar traegt auf dem Mux-Weg 1/fps).
 
 use std::collections::VecDeque;
 use std::path::{Component, Path};
@@ -423,11 +422,12 @@ fn ring() -> &'static Mutex<Ring> {
     })
 }
 
-/// Video-Einheit aus der Encoder-Schleife: Rohbytes und Zeitstempel in der
-/// ENCODER-Zeitbasis (1/90000).
-pub fn push_video(codec: Codec, data: Bytes, pts_ticks: i64) {
+/// Video-Einheit aus der Encoder-Schleife: Rohbytes und Zeitstempel bereits
+/// in Millisekunden (umgerechnet am Aufrufer, der seine Zeitbasis kennt —
+/// s. Modulkopf).
+pub fn push_video(codec: Codec, data: Bytes, ts_ms: i64) {
     if let Ok(mut r) = ring().lock() {
-        r.push(codec, data, pts_ticks * 1000 / 90_000);
+        r.push(codec, data, ts_ms);
     }
 }
 
@@ -534,11 +534,10 @@ mod tests {
         push_video(Codec::H264, puffer(&key), 0);
         // 3 Sekunden je 30 Bilder + Ton im 20-ms-Takt, zwei Vollbilder.
         for i in 0..90 {
-            let ts = i * 3000; // 1/90000 → 33 ms je Bild
-            push_video(Codec::H264, puffer(&key), ts);
+            push_video(Codec::H264, puffer(&key), i * 33);
             push_audio(puffer(&[0x4F, i as u8]), i * 33); // gleiche Wanduhr wie das Bild
         }
-        push_video(Codec::H264, puffer(&key), 90 * 3000);
+        push_video(Codec::H264, puffer(&key), 90 * 33);
         let n = clip_speichern(&ziel, 2.0).expect("Clip schreibt");
         assert!(n > 30, "zu wenige Einheiten: {n}");
         let eingang = ffmpeg::format::input(&ziel).expect("lesbar");
@@ -571,7 +570,7 @@ mod tests {
         let key = [0u8, 0, 1, 0x65, 0x88];
         push_video(Codec::H264, puffer(&key), 0);
         for i in 0..10 {
-            push_video(Codec::H264, puffer(&key), i * 3000);
+            push_video(Codec::H264, puffer(&key), i * 33);
             // Zwei Ton-Einheiten auf dieselbe Millisekunde. Vier Bytes
             // Nutzlast: ein-Byte-Stummel lehnt der TS-Muxer als Opus ab.
             let ton = (i / 2) * 33;

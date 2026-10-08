@@ -13,10 +13,12 @@
  * sowohl an der Stellen-Grenze (17→18 Ziffern, ~Okt 2026) als auch bei den
  * lokalen 20-stelligen IDs verschlüsselter Nachrichten.
  *
- * Limitation (v1): unread state seeds from activity DURING the session. If a
+ * Limitation: `latestByChannel` seeds from activity DURING the session. If a
  * message was posted while the client was offline and never sync-loaded, the
- * channel will not show as unread on next launch. Proper offline catch-up
- * would need a server-side read-state sync — out of scope for now.
+ * channel will not show as unread on next launch. Der serverseitige Lesestand
+ * (P0.2, `seedOwnLesestand`) behebt das NICHT: er trägt die eigene Lesemarke,
+ * nicht die neueste Nachricht je Kanal — und ohne die fehlt die Seite, gegen
+ * die `isUnread` vergleicht.
  */
 
 import { compareSnowflakeId } from '$lib/utils/snowflake';
@@ -164,9 +166,9 @@ class ReadState {
     }
   }
 
-  /** Kopie der Karte ohne den Kanal-Eintrag — für die Forget-Blöcke in
-   *  `forgetChannel` (die Wächter dort bleiben stehen, damit ohne Treffer
-   *  keine Zuweisung und damit keine Reaktivität feuert). */
+  /** Kopie der Karte ohne den Kanal-Eintrag. Die `if`-Wächter der Aufrufer
+   *  bleiben stehen, damit ohne Treffer keine Zuweisung und damit keine
+   *  Reaktivität feuert. */
   private ohneKanal<T>(karte: Record<string, T>, channelId: string): Record<string, T> {
     const next = { ...karte };
     delete next[channelId];
@@ -271,9 +273,7 @@ class ReadState {
    *  explicit "I've read this" actions. */
   clearMentions(channelId: string): void {
     if (!this.mentionCountByChannel[channelId]) return;
-    const next = { ...this.mentionCountByChannel };
-    delete next[channelId];
-    this.mentionCountByChannel = next;
+    this.mentionCountByChannel = this.ohneKanal(this.mentionCountByChannel, channelId);
     this.persistMentions();
   }
 
@@ -302,9 +302,7 @@ class ReadState {
       this.persist(this.unreadBisKey, () => this.unreadBisByChannel);
     }
     if (!this.unreadCountByChannel[channelId]) return;
-    const next = { ...this.unreadCountByChannel };
-    delete next[channelId];
-    this.unreadCountByChannel = next;
+    this.unreadCountByChannel = this.ohneKanal(this.unreadCountByChannel, channelId);
     this.persistUnread();
   }
 

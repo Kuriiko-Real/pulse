@@ -24,7 +24,6 @@
  */
 
 import { ConnectionState, Room, RoomEvent, Track, ExternalE2EEKeyProvider } from 'livekit-client';
-import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { isCapacitorAndroid, isCapacitorIOS } from '$lib/platform/runtime';
 import {
   anrufAnnehmen,
@@ -44,6 +43,7 @@ import { anrufSystemzeile, type AnrufZeilenSchluessel } from './systemzeileKern'
 import { warteAufAnrufSchluessel } from './schluesselWarten';
 import { E2E_DMS_ENABLED, PRIVATE_GRUPPEN_ENABLED } from '$lib/krypto/schalter';
 import { startAudioAbbruchfest } from '$lib/audio/abspielen';
+import { anrufNativ } from '$lib/platform/anrufNativ';
 
 const KLINGEL_TIMEOUT_MS = 45_000;
 
@@ -93,25 +93,6 @@ function e2eeWorker(): Worker {
  * Signalisierung (anrufAnnehmen/anrufAblehnen) im Klienten lebt.
  * In Browser/Electron No-op.
  */
-interface AnrufNativPlugin {
-  ankommen(opts: { callId: string; gegenstelle: string }): Promise<void>;
-  beenden(): Promise<void>;
-  addListener(
-    event: 'aktion',
-    cb: (data: {
-      aktion: 'annehmen' | 'ablehnen';
-      callId: string;
-      /** Nur vorhanden, wenn die Aktion aus einem VoIP-Push stammt (iOS):
-       *  dann kennt das Web den Anruf noch nicht und braucht den Kanal. */
-      channel_id?: string;
-      anruf_art?: string;
-      einleiter_id?: string;
-      einleiter_name?: string;
-    }) => void
-  ): Promise<PluginListenerHandle>;
-}
-
-const anrufNativ = registerPlugin<AnrufNativPlugin>('Anruf');
 
 /** Gibt es hier überhaupt eine native Anrufanzeige? An EINER Stelle, weil
  *  die Antwort drei Riegel in dieser Datei bedient — ein Riegel, der die

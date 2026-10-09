@@ -13,6 +13,7 @@
   import { voice } from '$lib/voice/livekit.svelte';
   import { VolumeBoost } from '$lib/stream/volumeBoost';
   import { applySinkId } from '$lib/audio/applySinkId';
+  import { isMobile } from '$lib/platform/runtime';
   import { ankerBefestigen, ankerLoesen } from '$lib/audio/stummerAnker';
   import StreamChatOverlay from '$lib/stream/components/StreamChatOverlay.svelte';
   import StreamChatInlineInput from '$lib/stream/components/StreamChatInlineInput.svelte';
@@ -234,7 +235,12 @@
       // operiert dann auf el.volume, ≤100%) — LiveKit führt es, auch sein Gerät.
       at.attach(el);
       el.muted = false;
-      el.play().catch(() => { /* autoplay best effort */ });
+      el.play().catch(() => {
+        // Ohne Zug IST dieses Element der hörbare Weg, und eine abgelehnte
+        // Wiedergabe muss auf Mobil sichtbar werden (iOS blieb sonst stumm,
+        // ohne Knopf und ohne Hinweis). Desktop unverändert: best effort.
+        if (isMobile()) localBlocked = true;
+      });
     }
     applyVolume();
     // Nicht `localBlocked` zurücklesen: das macht den Zustand zur Abhängigkeit dieses
@@ -290,15 +296,41 @@
     applyVolume();
   }
 
+  /**
+   * „Ton aktivieren" auf der Stream-Kachel.
+   *
+   * **Alle drei Startversuche werden noch in der Klick-Aufgabe abgesetzt.**
+   * WebKit verwirft die Nutzeraktivierung ueber ein `await` hinweg, und
+   * `AudioContext.resume()` braucht sie genauso wie `<audio>.play()`. Die
+   * vorige Fassung wartete erst auf `voice.unblockAudio()` und weckte den
+   * Verstaerker-Kontext danach — auf iOS blieb er deshalb `suspended`, und weil
+   * das Element im verstaerkten Fall stumm ist, war vom Stream NICHTS zu
+   * hoeren (am 2026-10-09 am iPhone gemeldet). Derselbe Fehler stand im
+   * Sprachweg, s. `voice/livekit.svelte.ts::unblockAudio`.
+   */
   async function enableAudio() {
-    await voice.unblockAudio();
-    try {
-      await audioEl?.play();
-      await boost?.resume();
-      localBlocked = !!boost?.suspended;
-    } catch {
-      /* still blocked — leave the button visible */
+    if (!isMobile()) {
+      // Desktop unverändert: der Ablauf mit `await` verliert dort keine Geste.
+      await voice.unblockAudio();
+      try {
+        await audioEl?.play();
+        await boost?.resume();
+        localBlocked = !!boost?.suspended;
+      } catch {
+        /* still blocked — leave the button visible */
+      }
+      return;
     }
+    const stimmen = voice.unblockAudio().catch(() => undefined);
+    const element = (audioEl?.play() ?? Promise.resolve())
+      .then(() => true)
+      .catch(() => false);
+    const verstaerker = (boost?.resume() ?? Promise.resolve()).catch(() => undefined);
+    await Promise.all([stimmen, verstaerker]);
+    const elementSpielt = await element;
+    // Verstaerkt: der Kontext traegt den Ton, das Element ist stumm. Sonst ist
+    // das Element der hoerbare Weg — dann zaehlt sein Ergebnis.
+    localBlocked = boost ? boost.suspended : !elementSpielt;
   }
 
   onDestroy(() => {

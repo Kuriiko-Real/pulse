@@ -23,6 +23,7 @@
   import { startProfileRefresh } from '$lib/identity/profile-refresh.svelte';
   import AuthBuehne from '$lib/components/AuthBuehne.svelte';
   import { isElectron } from '$lib/platform/runtime';
+  import { vonAussenOeffnen } from '$lib/navigation/navigationsHerkunft';
 
   type Step = 'credentials' | 'mfa';
 
@@ -96,7 +97,16 @@
     // mehr, das ein Account-Wechsel am selben Gerät verwechseln könnte.
     if (auth.isAuthenticated) void startProfileRefresh();
 
-    await goto(safeRedirect(page.url.searchParams.get('redirect')));
+    await zumZiel();
+  }
+
+  /** Nach der Anmeldung weiter. **Ein `redirect` kommt von aussen** — kein
+   *  Teil der App baut ihn —, und landet deshalb auch so: ein Link auf einen
+   *  Sprachkanal öffnet die Seite, ohne beizutreten (S1, D1,
+   *  `navigation/herkunft.ts`). */
+  function zumZiel(): Promise<void> {
+    const ziel = page.url.searchParams.get('redirect');
+    return ziel ? vonAussenOeffnen(safeRedirect(ziel)) : goto('/app');
   }
 
   async function submit(e: Event) {

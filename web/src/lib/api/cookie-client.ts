@@ -19,8 +19,8 @@
  * Admin-Poll der Beschwerden würde endlos 401 feuern.
  */
 
-import { AUTH_BASE, getCloudBearer, parseResponse } from './client';
-import { clearTokens, loadTokens } from './storage';
+import { AUTH_BASE, getCloudBearer, parseResponse, sitzungTotRaeumen } from './client';
+import { loadTokens } from './storage';
 import { safeParse, extractDetail } from './parse';
 import { mitCloudSitzung } from './sitzungsFrische';
 
@@ -57,7 +57,7 @@ export async function renewSession(): Promise<boolean> {
         // Session definitiv tot, Tokens weg + Marker für den Login-Toast.
         // Kein 403-Fall: der (Preemptive-)E-Mail-Gate-Bounce darf hier nicht
         // ausgelöst werden.
-        clearTokens();
+        sitzungTotRaeumen();
         cloudSitzungVergessen();
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem('pulse.session_expired', '1');

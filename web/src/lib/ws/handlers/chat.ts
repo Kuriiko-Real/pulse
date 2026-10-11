@@ -22,7 +22,7 @@ import { readState } from '$lib/stores/readState.svelte';
 import { quittungen } from '$lib/stores/quittungen.svelte';
 import { lesestandAnker } from '$lib/stores/lesestandKern';
 import { siehtHin } from '$lib/nachrichten/hinschauen';
-import { badgeMeldungFreigeben } from '$lib/platform/badgeMelden';
+import { badgeMeldungFreigeben, badgeNachZustellung } from '$lib/platform/badgeMelden';
 import { typing } from '$lib/stores/typing.svelte';
 import { userCache } from '$lib/stores/users.svelte';
 import { dispatchingUserId } from '$lib/stores/currentServerUser';
@@ -368,6 +368,9 @@ export function register(ctx: HandlerContext): void {
   // Für Gruppen gilt „offen", nicht „abonniert"; DMs/Ablage bleiben bei
   // ihrem Abo-Blick.
   registerWsHandler('postfach_neu', () => {
+    // Der Server hat dafür womöglich an ein iOS-Gerät gepusht und dabei
+    // hochgezählt — nach dem Abholen den Stand neu melden (C1).
+    badgeNachZustellung();
     postfachAbholenUndAnzeigen((kanalId) => {
       if (privateGruppen.istGruppe(kanalId)) return page.params.dmChannelId === kanalId;
       return ctx.subs.has(kanalId);

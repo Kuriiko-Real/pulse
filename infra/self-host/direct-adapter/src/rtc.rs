@@ -272,7 +272,7 @@ mod tests {
     fn oeffentliche_adressen_gelten_als_internet() {
         // u.a. eine typische Mobilfunk-Adresse (CGNAT) — sie ist aus Sicht des
         // Servers eine Gegenstelle von außen, kein LAN-Kandidat.
-        for wan in ["100.64.12.7", "159.195.150.54", "8.8.8.8"] {
+        for wan in ["100.64.12.7", "1.1.1.1", "8.8.8.8"] {
             assert!(!is_lan_address(wan), "{wan} sollte als Internet gelten");
         }
     }

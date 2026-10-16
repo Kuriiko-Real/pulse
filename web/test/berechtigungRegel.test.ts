@@ -2,6 +2,8 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
   ablehnungMerken,
+  mitteilungenBeimStartFragen,
+  mitteilungenNachAnlassFragen,
   SENDUNGEN_BIS_ZUR_MITTEILUNGSFRAGE,
   vorgehenVorDemDialog,
   type Lage
@@ -10,15 +12,15 @@ import {
 const lage = (teil: Partial<Lage> = {}): Lage => ({
   art: 'mikrofon',
   stand: 'offen',
-  inHuelle: true,
+  iosHuelle: true,
   schonAbgelehnt: false,
   sendungen: 0,
   ...teil
 });
 
 test('im Browser ohne Blatt weiter — dort ist die Erlaubnis jederzeit umkehrbar', () => {
-  assert.equal(vorgehenVorDemDialog(lage({ inHuelle: false })), 'weiter');
-  assert.equal(vorgehenVorDemDialog(lage({ art: 'mitteilungen', inHuelle: false })), 'weiter');
+  assert.equal(vorgehenVorDemDialog(lage({ iosHuelle: false })), 'weiter');
+  assert.equal(vorgehenVorDemDialog(lage({ art: 'mitteilungen', iosHuelle: false })), 'weiter');
 });
 
 test('erteilt oder verweigert: ohne Blatt weiter, der Dialog erscheint ohnehin nicht mehr', () => {
@@ -96,4 +98,22 @@ test('ein „später" vor der Mitteilungsfrage hält eine Weile, nicht für imme
   // abgelaufen — sonst blieben genau die Getroffenen gesperrt.
   assert.equal(spaeterGiltNoch(true, damals), false);
   assert.equal(spaeterGiltNoch(undefined, damals), false);
+});
+
+// Eigentümer-Entscheid 2026-10-16: Android behält den alten Weg.
+test('Android-Hülle: kein Blatt, auch nicht vor Kamera und Mikrofon', () => {
+  // Die Android-Hülle meldet `iosHuelle: false` — wie im Browser geht es
+  // ohne Blatt direkt an den System-Dialog.
+  for (const art of ['mikrofon', 'kamera', 'mitteilungen'] as const) {
+    assert.equal(vorgehenVorDemDialog(lage({ art, iosHuelle: false, sendungen: 9 })), 'weiter');
+  }
+});
+
+test('Mitteilungsfrage: Android beim Start, iOS nach einem Anlass, sonst nirgends', () => {
+  assert.equal(mitteilungenBeimStartFragen('android'), true);
+  assert.equal(mitteilungenBeimStartFragen('ios'), false);
+  assert.equal(mitteilungenBeimStartFragen(null), false);
+  assert.equal(mitteilungenNachAnlassFragen('ios'), true);
+  assert.equal(mitteilungenNachAnlassFragen('android'), false);
+  assert.equal(mitteilungenNachAnlassFragen(null), false);
 });

@@ -25,7 +25,12 @@ import { bannerAntworten } from './bannerAntwort.svelte';
 import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
 import { badgeNachziehen } from './badge';
 import { berechtigungsblatt } from './berechtigung.svelte';
-import type { Stand } from './berechtigungRegel';
+import {
+  mitteilungenBeimStartFragen,
+  mitteilungenNachAnlassFragen,
+  type Huelle,
+  type Stand
+} from './berechtigungRegel';
 import { pushGeraetId } from './geraeteKennungPush';
 import { mitteilungsZiel } from './mitteilungsZiel';
 
@@ -169,14 +174,17 @@ export function installiereFcmPush(): void {
             visibility: 1 // PUBLIC — auf dem Sperrbildschirm lesbar
           });
         }
-        // **Hier wird NICHT mehr nach der Erlaubnis gefragt** (2026-10-08,
+        // **Auf iOS wird hier NICHT nach der Erlaubnis gefragt** (2026-10-08,
         // iOS-Punkt 36). Diese Stelle läuft beim Start, also bevor der Nutzer
         // die App gesehen hat — und der iOS-Dialog erscheint genau EINMAL.
-        // Ein „nein" aus Reflex war damit dauerhaft. Gefragt wird jetzt mit
+        // Ein „nein" aus Reflex war damit dauerhaft. Gefragt wird dort mit
         // Vorerklärung und erst nach einem Anlass, s. `mitteilungenAnfragen`.
-        // Was hier bleibt, ist der Fall „Erlaubnis liegt vor": dann muss das
-        // Token bei jedem Start neu gemeldet werden (es kann sich ändern).
-        const perms = await fcm.checkPermissions();
+        // **Android fragt weiter hier, beim Start** — wie vor der iOS-Hülle
+        // (Eigentümer-Entscheid 2026-10-16, `berechtigungRegel.ts`).
+        let perms = await fcm.checkPermissions();
+        if (perms.receive !== 'granted' && mitteilungenBeimStartFragen(huelle())) {
+          perms = await fcm.requestPermissions();
+        }
         if (perms.receive !== 'granted') return;
         await meldeAn(fcm);
         if (!listenerBereit) {
@@ -197,6 +205,11 @@ export function installiereFcmPush(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') meldeBestEffort();
   });
+}
+
+function huelle(): Huelle {
+  if (isCapacitorIOS()) return 'ios';
+  return isCapacitorAndroid() ? 'android' : null;
 }
 
 /** Plugin-Auskunft in unseren Stand übersetzt (`berechtigungRegel.ts`).
@@ -229,6 +242,9 @@ function alsStand(receive: 'granted' | 'denied' | 'prompt'): Stand {
  * Mitteilungs-Erlaubnis ist nichts, wofür man eine Fehlermeldung zeigt.
  */
 export async function mitteilungenAnfragen(): Promise<void> {
+  // Nur iOS: Android fragt beim Start (`installiereFcmPush`), ein zweiter
+  // Anlauf nach dem Senden wäre dort neues Verhalten.
+  if (!mitteilungenNachAnlassFragen(huelle())) return;
   const fcm = plugin();
   if (!fcm) return;
   try {

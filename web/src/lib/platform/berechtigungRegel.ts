@@ -17,9 +17,12 @@
  *  1. **Nur wenn noch offen.** `granted` braucht nichts, `denied` kann nichts
  *     mehr ändern — dort wäre die Vorerklärung eine Lüge, weil der Knopf
  *     danach keinen Dialog mehr öffnet.
- *  2. **Nur in einer Hülle.** Im Browser ist die Berechtigung an die Seite
+ *  2. **Nur in der iOS-Hülle.** Im Browser ist die Berechtigung an die Seite
  *     gebunden und jederzeit über das Schloss in der Adresszeile umkehrbar;
  *     die Einmaligkeit, gegen die wir hier arbeiten, gibt es dort nicht.
+ *     **Android bleibt beim alten Weg** (Eigentümer-Entscheid 2026-10-16):
+ *     Mitteilungs-Erlaubnis beim Start, kein Blatt, auch nicht vor Kamera
+ *     oder Mikrofon — s. `mitteilungenBeimStartFragen`.
  *  3. **Ein „später" hält eine Weile — bei Mitteilungen.** Wer die Erklärung
  *     dort weggetippt hat, sieht sie `SPAETER_GILT_MS` lang nicht wieder,
  *     danach beim nächsten Anlass erneut. Dazu der Weg in den Einstellungen
@@ -58,8 +61,9 @@ export const SENDUNGEN_BIS_ZUR_MITTEILUNGSFRAGE = 3;
 export interface Lage {
   art: Berechtigung;
   stand: Stand;
-  /** Läuft die App in einer Capacitor-Hülle? */
-  inHuelle: boolean;
+  /** Läuft die App in der iOS-Hülle? Nur dort gibt es das Blatt (Punkt 2
+   *  oben) — in der Android-Hülle ist das `false`. */
+  iosHuelle: boolean;
   /** Hat der Nutzer die Vorerklärung für DIESE Art weggetippt, und gilt das
    *  noch (`spaeterGiltNoch`)? */
   schonAbgelehnt: boolean;
@@ -129,7 +133,7 @@ export type Vorgehen =
   | 'nicht';
 
 export function vorgehenVorDemDialog(lage: Lage): Vorgehen {
-  if (!lage.inHuelle) return 'weiter';
+  if (!lage.iosHuelle) return 'weiter';
   if (lage.stand !== 'offen') return 'weiter';
   // Nur dort, wo ein „später" überhaupt gemerkt wird — steht bei Kamera oder
   // Mikrofon trotzdem ein Merker, darf er die Handlung nicht sperren.
@@ -138,4 +142,26 @@ export function vorgehenVorDemDialog(lage: Lage): Vorgehen {
     return lage.sendungen >= SENDUNGEN_BIS_ZUR_MITTEILUNGSFRAGE ? 'erklaeren' : 'nicht';
   }
   return 'erklaeren';
+}
+
+/** In welcher Capacitor-Hülle die App läuft; `null` im Browser und in Electron. */
+export type Huelle = 'ios' | 'android' | null;
+
+/**
+ * Fragt die Hülle beim START nach der Mitteilungs-Erlaubnis?
+ *
+ * **Android ja, iOS nein** (Eigentümer-Entscheid 2026-10-16). Auf iOS ist der
+ * Dialog einmalig, deshalb fragt dort `fcm.ts::mitteilungenAnfragen` mit
+ * Vorerklärung nach einem Anlass. Android behält den Weg, den es vor der
+ * iOS-Hülle hatte: beim Start fragen, ohne Blatt, und keine zweite Frage nach
+ * dem Senden.
+ */
+export function mitteilungenBeimStartFragen(huelle: Huelle): boolean {
+  return huelle === 'android';
+}
+
+/** Fragt die Hülle NACH einer gesendeten Nachricht (mit Vorerklärung)? Nur
+ *  iOS — das Gegenstück zu `mitteilungenBeimStartFragen`. */
+export function mitteilungenNachAnlassFragen(huelle: Huelle): boolean {
+  return huelle === 'ios';
 }

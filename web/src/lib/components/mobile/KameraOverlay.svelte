@@ -367,7 +367,7 @@
     clearTimeout(ladeTimer);
     ladeTimer = setTimeout(() => (ladeMindestens = false), 1400);
     // Vorerklärung vor dem System-Dialog (iOS-Punkt 36). Erscheint nur beim
-    // ERSTEN Mal und nur in einer Hülle — die Regel steht in
+    // ERSTEN Mal und nur in der iOS-Hülle — die Regel steht in
     // `platform/berechtigungRegel.ts`. „Später" bricht hier ab, ohne den
     // System-Dialog zu öffnen: eine einmal verweigerte Kamera-Erlaubnis wäre
     // auf iOS dauerhaft weg.

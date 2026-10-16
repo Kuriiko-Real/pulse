@@ -18,7 +18,7 @@ import {
   type Berechtigung,
   type Stand
 } from './berechtigungRegel';
-import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
+import { isCapacitorIOS } from './runtime';
 import { sendungenLesen } from './eigeneSendungen';
 
 const ABGELEHNT_SCHLUESSEL = 'pulse.berechtigung';
@@ -96,8 +96,8 @@ class Berechtigungsblatt {
 
   /**
    * Vor dem System-Dialog aufrufen. Löst `true` auf, wenn der Aufrufer den
-   * System-Dialog stellen soll — entweder ohne Erklärung (Browser, Lage schon
-   * entschieden) oder weil der Nutzer das Blatt bestätigt hat. `false` heisst
+   * System-Dialog stellen soll — entweder ohne Erklärung (Browser, Electron,
+   * Android-Hülle, Lage schon entschieden) oder weil der Nutzer das Blatt bestätigt hat. `false` heisst
    * „jetzt NICHT fragen": der Nutzer hat „später" getippt, oder es fehlt der
    * Anlass, oder die Erklärung wurde früher schon weggetippt, oder ein anderes
    * Blatt steht gerade offen. Ein `false` darf der Aufrufer nie mit einem
@@ -107,7 +107,8 @@ class Berechtigungsblatt {
     const vorgehen = vorgehenVorDemDialog({
       art,
       stand,
-      inHuelle: isCapacitorIOS() || isCapacitorAndroid(),
+      // Nur iOS — Android bleibt ohne Blatt (Eigentümer-Entscheid 2026-10-16).
+      iosHuelle: isCapacitorIOS(),
       schonAbgelehnt: spaeterGiltNoch(karteLesen<unknown>(ABGELEHNT_SCHLUESSEL)[art], Date.now()),
       sendungen: sendungenLesen()
     });

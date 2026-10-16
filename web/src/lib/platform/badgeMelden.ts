@@ -1,6 +1,7 @@
 import { ApiError, request } from '$lib/api/client';
 import { serversStore } from '$lib/api/servers.svelte';
 import { badgeSetzen } from './badge';
+import { isCapacitorIOS } from './runtime';
 import {
   abgewiesen,
   serverHatGezaehlt,
@@ -33,9 +34,12 @@ let nachzuegler: ReturnType<typeof setTimeout> | null = null;
  * Solange die App wach ist, ist dieser Klient die Wahrheit; der Serverzähler
  * ist nur die Fortschreibung für die Zeit, in der niemand rechnen kann.
  *
- * **Gilt für JEDE Plattform, nicht nur die iOS-Hülle.** Wer am Rechner liest,
- * soll damit die Plakette am Telefon abräumen — dieselbe Erwartung wie bei
- * WhatsApp Web. Der Aufruf geht an die CLOUD: nur sie verschickt Pushes (sie
+ * **Gemeldet wird nur aus der iOS-Hülle** (Eigentümer-Entscheid 2026-10-16).
+ * Die Idee war, dass auch der Rechner die Plakette am Telefon abräumt (wie
+ * WhatsApp Web) — aber Desktop und Browser kennen die Zahl nicht verlässlich
+ * (ohne lokalen Krypto-Verlauf fehlen ihnen verschlüsselte Nachrichten, ihre
+ * Zahl ist dann zu klein), und vor der iOS-Arbeit riefen sie den Endpunkt nie.
+ * Der Aufruf geht an die CLOUD: nur sie verschickt Pushes (sie
  * gelten DMs, und die sind Cloud-only), also führt nur sie den Zähler. Bis
  * zum 2026-10-11 ging er an den AKTIVEN Server — mit einem Self-Host davor
  * setzte das dessen Zähler zurück, während der in der Cloud weiter wuchs
@@ -60,6 +64,8 @@ export function badgeMelden(wert: number): void {
  *  die Drossel es sagt. Später heisst: ein Nachzügler nach Ablauf der Frist
  *  (iOS-Bughunt 2, C3), statt den Wert zu verwerfen. */
 function melden(): void {
+  // Nur die iOS-Hülle meldet — s. `badgeMelden`.
+  if (!isCapacitorIOS()) return;
   if (gerechnet === null) return;
   const wert = gerechnet;
   const jetzt = Date.now();

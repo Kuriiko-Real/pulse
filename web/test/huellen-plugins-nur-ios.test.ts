@@ -33,3 +33,14 @@ for (const datei of [
     assert.doesNotMatch(quelle, /isCapacitorAndroid/);
   });
 }
+
+// Eigentümer-Entscheid 2026-10-16 (Fixliste 18): POST /fcm/badge nur aus der
+// iOS-Hülle — Desktop, Browser und Android rufen ihn wie vorher nie.
+test('badgeMelden.ts: der Server-Ruf steht hinter der iOS-Weiche', () => {
+  const quelle = lies('src/lib/platform/badgeMelden.ts');
+  const weiche = quelle.indexOf('if (!isCapacitorIOS()) return;');
+  const ruf = quelle.indexOf("'/fcm/badge'");
+  const melden = quelle.indexOf('function melden(): void {');
+  assert.ok(melden >= 0 && weiche > melden && ruf > weiche, 'Weiche vor dem Ruf in melden()');
+  assert.equal(quelle.split("'/fcm/badge'").length - 1, 1, 'genau ein Aufrufort');
+});

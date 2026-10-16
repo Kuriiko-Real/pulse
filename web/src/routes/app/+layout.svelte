@@ -447,9 +447,10 @@
     // Icon-Badge: eine ZAHL, und zwar ungelesene NACHRICHTEN der privaten
     // Gespraeche — dasselbe, was der Server im Push fortschreibt (Begruendung
     // in `navigation/abzeichen.svelte.ts::ungeleseneNachrichten`). Zwei
-    // Empfaenger: das Geraet selbst (nur in der iOS-Huelle wirksam) und der
+    // Empfaenger, beide nur aus der iOS-Huelle: das Geraet selbst und der
     // Server, der die Zahl in den naechsten Push legt — ohne ihn stuende sie
-    // still, solange die App zu ist (eingefrorene JS-Engine).
+    // still, solange die App zu ist (eingefrorene JS-Engine). Ausserhalb der
+    // Huelle ein No-op (`badgeMelden.ts`).
     // Ans Icon legt `badgeMelden` die Zahl erst, wenn sie etwas bedeutet —
     // vorher räumte die ungeladene 0 die Plakette des letzten Pushs ab
     // (iOS-Bughunt 2, C7, Begründung dort).

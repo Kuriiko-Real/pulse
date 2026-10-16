@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import {
   MAX_SKALA,
   MIN_SKALA,
-  skalaFuerKategorie
+  skalaFuerKategorie,
+  textGroessenAnpassung
 } from '../src/lib/platform/schriftskala.ts';
 
 test('die vier kleinen Stufen bleiben bei der Vorgabe', () => {
@@ -47,4 +48,14 @@ test('nichts liegt ausserhalb der Grenzen', () => {
     const s = skalaFuerKategorie(k);
     assert.ok(s >= MIN_SKALA && s <= MAX_SKALA, `${k} -> ${s}`);
   }
+});
+
+test('ohne Kategorie (ausserhalb der iOS-Hülle) wird nichts gesetzt', () => {
+  assert.equal(textGroessenAnpassung(null), null);
+  assert.equal(textGroessenAnpassung(undefined), null);
+});
+
+test('mit Kategorie immer ein Wert — auch 100 % zum Zurücknehmen', () => {
+  assert.equal(textGroessenAnpassung('UICTContentSizeCategoryL'), `${MIN_SKALA}%`);
+  assert.equal(textGroessenAnpassung('UICTContentSizeCategoryAccessibilityXXXL'), `${MAX_SKALA}%`);
 });

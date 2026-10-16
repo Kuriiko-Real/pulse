@@ -14,16 +14,17 @@
  * Außerhalb der Hülle ist alles No-op: das Attribut erscheint nie, und im
  * Browser folgt die Schrift ohnehin den Einstellungen des Browsers.
  */
-import { skalaFuerKategorie } from './schriftskala';
+import { textGroessenAnpassung } from './schriftskala';
 
 const ATTRIBUT = 'data-schriftkategorie';
 
 function anwenden(): void {
   const wurzel = document.documentElement;
-  const skala = skalaFuerKategorie(wurzel.getAttribute(ATTRIBUT));
-  // 100 % ausdrücklich setzen und nicht weglassen: ein Zurückstellen auf
-  // „normal" muss eine vorherige Vergrößerung auch wieder zurücknehmen.
-  wurzel.style.setProperty('-webkit-text-size-adjust', `${skala}%`);
+  // Ohne Attribut (alles ausser der iOS-Hülle) nichts setzen; mit Attribut
+  // auch 100 % ausdrücklich — Regel in `schriftskala.ts`.
+  const wert = textGroessenAnpassung(wurzel.getAttribute(ATTRIBUT));
+  if (wert === null) wurzel.style.removeProperty('-webkit-text-size-adjust');
+  else wurzel.style.setProperty('-webkit-text-size-adjust', wert);
 }
 
 let laeuft = false;

@@ -482,7 +482,10 @@ services:
       # Hetzner-Stack; hier lief das Bild mit dem Patch wirkungslos
       # (iOS-Bughunt 2, E1). Ein unbekannter Schalter waere auf jedem aelteren
       # Bild folgenlos — er wartet also auf nichts.
-      PULSE_KEYFRAME_ON_JOIN: "1"
+      # OFFEN (Rebase-Probe 2026-10-16): erst mit dem Bild, das 0010 traegt,
+      # und dann an allen fuenf Stellen zugleich einschalten
+      # (infra/self-host/tests/test_mediamtx_fork.py, nativeBackend.test.ts).
+      # PULSE_KEYFRAME_ON_JOIN: "1"
       # Umordnungsfenster fuer BILDspuren, in Paketen (Vorgabe 64 = ~150 ms
       # bei 4 Mbit/s, knapp UNTER der ersten NACK-Nachlieferung von ~160 ms).
       # 128 gibt der Nachlieferung eine zweite Runde und haelt einen echten

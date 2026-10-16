@@ -342,18 +342,22 @@ impl Capturer {
                     // nicht. `FrameOutput` steigt fuer Bilder sofort aus,
                     // wenn keine Bildsenke gesetzt ist (s. `output.rs`), die
                     // Bilder werden also weiterhin verworfen — nur eben leise.
-                    ton_stream
-                        .addStreamOutput_type_sampleHandlerQueue_error(
-                            ProtocolObject::from_ref(&*ton_output),
-                            SCStreamOutputType::Screen,
-                            None,
-                        )
-                        .map_err(|e| {
-                            anyhow!(
-                                "addStreamOutput(ton/screen) failed: {}",
-                                e.localizedDescription()
-                            )
-                        })?;
+                    // Diese Anmeldung dient allein der Ruhe im System-Log und
+                    // darf den Start deshalb NICHT kosten: schlaegt sie fehl,
+                    // laeuft der Ton-Strom wie vor ihrer Einfuehrung, und die
+                    // Bilder werden eben wieder laut verworfen.
+                    if let Err(e) = ton_stream.addStreamOutput_type_sampleHandlerQueue_error(
+                        ProtocolObject::from_ref(&*ton_output),
+                        SCStreamOutputType::Screen,
+                        None,
+                    ) {
+                        eprintln!(
+                            "[mac-capture] addStreamOutput(ton/screen) fehlgeschlagen, \
+                             Ton laeuft weiter (Code {}): {}",
+                            e.code(),
+                            e.localizedDescription()
+                        );
+                    }
                 }
                 Some((ton_stream, ton_output))
             }

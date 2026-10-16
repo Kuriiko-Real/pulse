@@ -1,7 +1,7 @@
 """Gerätetoken gegen die Anmelde-Ketten am auth-svc abgleichen (Nachtrag zu C2).
 
 **Warum es diesen Lauf gibt.** FCM- und PushKit-Token tragen die Kette, unter
-der sie angemeldet wurden (Migration 0102), und fallen, wenn auth-svc deren
+der sie angemeldet wurden (Migration 0105), und fallen, wenn auth-svc deren
 Ende meldet (``push_widerruf.py``). Die Meldung reist über Redis Pub/Sub und
 hat zwei Lücken: Ein Ende, das während eines Neustarts dieses Dienstes kommt,
 hört niemand — das verlorene Telefon klingelte weiter. Und eine Kette, die nur
@@ -21,7 +21,7 @@ nicht mit 200 oder unlesbar, bleibt jede Zeile stehen. Gelöscht wird nur, was
 auth-svc ausdrücklich als beendet nennt — und das tut es nur für Konten, die
 es kennt (Begründung in ``dcc_shared.anmeldeketten``).
 
-**Zeilen ohne Kette** (vor Migration 0102 angemeldet) fasst der Lauf nicht an;
+**Zeilen ohne Kette** (vor Migration 0105 angemeldet) fasst der Lauf nicht an;
 er fragt gar nicht nach ihnen. Sie bekommen ihre Kette beim nächsten
 App-Start.
 

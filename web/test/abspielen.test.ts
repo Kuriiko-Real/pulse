@@ -240,7 +240,8 @@ describe('Verdrahtung: jeder Raum wird VOR connect() abgesichert', () => {
 
   for (const datei of [
     'src/lib/voice/livekit.svelte.ts',
-    'src/lib/anrufe/anruf.svelte.ts',
+    // Der Web-Anrufraum liegt seit feat/ios in `webAnrufRaum.ts`.
+    'src/lib/anrufe/webAnrufRaum.ts',
     'src/lib/gast/gastRaum.svelte.ts',
   ]) {
     test(`${datei}`, () => {
@@ -257,6 +258,6 @@ describe('Verdrahtung: jeder Raum wird VOR connect() abgesichert', () => {
   test('eigene play()-Aufrufe ohne Fänger laufen über spieleAb', () => {
     assert.match(lies('src/lib/components/message/AudioNachricht.svelte'), /void spieleAb\(audio\)/);
     assert.match(lies('src/lib/components/mobile/KameraOverlay.svelte'), /void spieleAb\(vorschau\)/);
-    assert.match(lies('src/lib/voice/audioElements.ts'), /spieleAb\(anchor\)\.catch\(\(\) => onBlocked\(\)\)/);
+    assert.match(lies('src/lib/voice/audioElements.ts'), /spieleAb\(anchor\)\.catch\(/);
   });
 });

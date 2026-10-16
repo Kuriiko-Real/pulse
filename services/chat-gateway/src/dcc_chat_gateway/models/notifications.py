@@ -86,7 +86,7 @@ class FcmToken(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     #: Anmelde-Kette, unter der das Gerät den Token angemeldet hat (Claim
-    #: ``kette``, Migration 0102). Endet sie, fällt die Zeile
+    #: ``kette``, Migration 0105). Endet sie, fällt die Zeile
     #: (``push_widerruf.py``). ``NULL``: vor der Migration angemeldet.
     kette: Mapped[str | None] = mapped_column(Text, nullable=True)
 

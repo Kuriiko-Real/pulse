@@ -146,7 +146,12 @@ ARG MEDIAMTX_VERSION=1.19.1
 # Dass es so lange unbemerkt blieb, hat denselben Grund wie die Behebung: ein
 # Vollbild bedient den GANZEN Strom. Ein einziger Chromium-Zuschauer im Raum
 # deckt alle anderen mit ab.
-ARG PULSE_REVISION=10
+#
+# OFFEN (Rebase-Probe 2026-10-16): PULSE_REVISION steht hier noch auf 9.
+# So, wie es steht, baute der Workflow `1.19.1-pulse9` NEU und mit 0010 —
+# derselbe Tag mit anderem Inhalt. Vor dem Landen auf 10 heben (dann baut
+# der Workflow einen neuen Tag; die Pins ziehen danach nach, s. oben).
+ARG PULSE_REVISION=9
 ARG GO_VERSION=1.26
 
 # ── Stage 1: build the patched binary ──────────────────────────────────────

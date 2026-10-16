@@ -4,7 +4,7 @@ auth-svc meldet auf ``dcc_shared.anmeldeketten.KANAL``, dass Ketten zu Ende
 sind — Abmelden, „Sitzung beenden", Diebstahlsverdacht, Passwortwechsel,
 Passwort-Reset, Sperre. Hier fallen daraufhin die FCM- und PushKit-Token, die
 unter diesen Ketten angemeldet wurden (``fcm_tokens.kette``/``voip_tokens.kette``,
-Migration 0102). Ohne das zeigte ein verlorenes Telefon nach dem Widerruf
+Migration 0105). Ohne das zeigte ein verlorenes Telefon nach dem Widerruf
 weiter Banner mit Absendernamen und klingelte mit dem Namen des Anrufers.
 
 Die Meldung ist flüchtig: was während eines Neustarts kommt, hört hier
@@ -36,7 +36,7 @@ async def geraetetoken_loeschen(session: Any, ende: KettenEnde) -> int:
     """Die Zeilen löschen, die zu ``ende`` gehören; liefert ihre Anzahl.
 
     ``alle``: jede Zeile des Kontos, auch die ohne Kettenvermerk (vor
-    Migration 0102 angemeldet). Sonst nur Zeilen genau dieser Ketten — eine
+    Migration 0105 angemeldet). Sonst nur Zeilen genau dieser Ketten — eine
     Zeile ohne Vermerk bleibt dann stehen, denn sie könnte dem Gerät gehören,
     das gerade NICHT abgemeldet wird.
     """

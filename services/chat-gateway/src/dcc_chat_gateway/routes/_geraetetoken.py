@@ -23,7 +23,7 @@ Diese Rechnung einmal zu haben ist der ganze Zweck: eine Kopie für den
 VoIP-Token hätte beim nächsten Fund genau eine der beiden Stellen geheilt.
 
 Seit dem 2026-10-11 tragen beide Tabellen zusätzlich ``kette`` (Migration
-0102, iOS-Bughunt 2, C2): die Anmelde-Kette, deren Ende die Zeile löscht.
+0105, iOS-Bughunt 2, C2): die Anmelde-Kette, deren Ende die Zeile löscht.
 """
 
 from __future__ import annotations

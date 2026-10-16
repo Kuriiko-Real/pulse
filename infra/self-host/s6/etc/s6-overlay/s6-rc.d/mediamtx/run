@@ -22,14 +22,15 @@
 # (Begruendung in der Cloud-Datei), auch die Upload-Leitung eines
 # Heimservers ist damit kein Grund dagegen.
 #
-# Dazu PULSE_KEYFRAME_ON_JOIN=1: Vollbild beim Beitritt eines Zuschauers
-# anfordern (WebKit fragt nicht selbst, iOS-Bughunt 2, E1). Wirkt erst mit
-# einem Bild, das Patch 0010 traegt — bis dahin ohne Wirkung.
+# OFFEN: PULSE_KEYFRAME_ON_JOIN=1 (Patch 0010, iOS-Bughunt 2, E1) steht hier
+# noch NICHT. Die Liste muss wortgleich zur Windows-Server-App bleiben
+# (desktop/test/localBackend/nativeBackend.test.ts), und deren mediamtx.exe
+# baut `bauen.sh` mit ALLEN Patches — dort wuerde der Schalter sofort wirken.
+# Beide Stellen zusammen nachziehen, wenn das Bild mit 0010 gebaut ist.
 exec 2>&1
 PULSE_KEYFRAME_INTERVAL=0 \
 PULSE_DEPENDENCY_DESCRIPTOR=1 \
 PULSE_KEYFRAME_ON_DISCARD=1 \
-PULSE_KEYFRAME_ON_JOIN=1 \
 PULSE_VIDEO_REORDER_BUFFER=128 \
 PULSE_AUDIO_REORDER_BUFFER=4 \
 PULSE_AUDIO_NACK=1 \

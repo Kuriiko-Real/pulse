@@ -1,7 +1,7 @@
 """voip_tokens — PushKit-Tokens der iOS-App (iOS-Liste Punkt 40)
 
-Revision ID: 0101_voip_tokens
-Revises: 0100_cached_user_profiles_lower
+Revision ID: 0104_voip_tokens
+Revises: 0103_archiv_einlieferer
 Create Date: 2026-10-08 21:00:00.000000+00:00
 
 """
@@ -15,8 +15,8 @@ from alembic import op
 # Siehe 0088: die Tabellen dieses Dienstes leben im Schema ``chat``.
 SCHEMA = "chat"
 
-revision: str = "0101_voip_tokens"
-down_revision: str | Sequence[str] | None = "0100_cached_user_profiles_lower"
+revision: str = "0104_voip_tokens"
+down_revision: str | Sequence[str] | None = "0103_archiv_einlieferer"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

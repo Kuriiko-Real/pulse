@@ -32,6 +32,7 @@
   import type { Attachment } from '$lib/api/types';
   import AutoRefreshImage from './AutoRefreshImage.svelte';
   import Lightbox from './Lightbox.svelte';
+  import AnhangLadeknopf from './AnhangLadeknopf.svelte';
   import AudioNachricht from './message/AudioNachricht.svelte';
   import FileIcon from '@lucide/svelte/icons/file';
   import FileTextIcon from '@lucide/svelte/icons/file-text';
@@ -409,16 +410,6 @@ import { Portal } from 'bits-ui';
     vollbildUrl = null;
   }
 
-  /** Ersatz, wenn ein Anhang keinen Dateinamen traegt.
-   *
-   *  Kein Schoenheitsdetail: mit `undefined` faellt das `download`-Attribut
-   *  ganz weg, und ohne `download` NAVIGIERT der Klick auf die
-   *  `blob:`-Adresse, statt zu speichern — ein Anhang mit `text/html` liefe
-   *  dann als Skript im Ursprung der Anwendung. Zusammen mit
-   *  `krypto/sichererBlobTyp.ts` sind das die zwei Haelften derselben
-   *  Absicherung; eine allein genuegt nicht. */
-  const ERSATZ_DATEINAME = 'anhang';
-
   function kind(mime: string | null): 'image' | 'video' | 'audio' | 'pdf' | 'other' {
     if (!mime) return 'other';
     if (mime.startsWith('image/')) return 'image';
@@ -437,7 +428,7 @@ import { Portal } from 'bits-ui';
     const w = a.width ?? 0;
     const h = a.height ?? 0;
     if (w <= 0 || h <= 0) return '';
-    return `width:${w}px;aspect-ratio:${w} / ${h};`;
+    return `width:min(${w}px, 100%);aspect-ratio:${w} / ${h};`;
   }
 </script>
 
@@ -449,7 +440,7 @@ import { Portal } from 'bits-ui';
         {@const box = reserveBox(a)}
         <button
           type="button"
-          class="block max-h-96 w-fit max-w-md cursor-zoom-in overflow-hidden rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+          class="block max-h-96 w-fit max-w-[min(28rem,100%)] cursor-zoom-in overflow-hidden rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary"
           style={box}
           onclick={() => openLightbox(a)}
           data-testid="attachment-image"
@@ -463,7 +454,7 @@ import { Portal } from 'bits-ui';
               ? a.thumb_schluessel !== null && a.thumb_schluessel !== undefined
               : a.thumb_url !== null && a.thumb_url !== undefined}
             anhang={a.verschluesselt ? a : null}
-            class={box ? 'block size-full object-cover' : 'block max-h-96 w-auto object-cover'}
+            class={box ? 'block size-full object-cover' : 'block max-h-96 w-auto max-w-full object-cover'}
           />
         </button>
       {:else if k === 'video'}
@@ -552,13 +543,11 @@ import { Portal } from 'bits-ui';
             <RefreshCwIcon class="text-text-muted size-4 shrink-0" />
           </button>
         {:else}
-          <a
-            href={quelleDatei || undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="bg-bg-input hover:bg-bg-hover flex w-fit max-w-md items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-sm transition-colors"
+          <AnhangLadeknopf
+            quelle={quelleDatei}
+            dateiname={a.filename}
+            class="bg-bg-input hover:bg-bg-hover flex w-fit max-w-md items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-left text-sm transition-colors"
             data-testid="attachment-download"
-            download={a.filename || ERSATZ_DATEINAME}
           >
             <div class="text-text-muted shrink-0">
               {#if k === 'pdf'}
@@ -580,7 +569,7 @@ import { Portal } from 'bits-ui';
               </p>
             </div>
             <DownloadIcon class="text-text-muted size-4 shrink-0" />
-          </a>
+          </AnhangLadeknopf>
         {/if}
       {/if}
     {/each}

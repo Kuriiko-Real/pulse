@@ -1,0 +1,98 @@
+import Capacitor
+
+/// Die Brücke der Anrufe zum Web (JS-Name `Anruf`). Der Zustand lebt in
+/// `Anrufverwaltung` (`Anrufverwaltung.swift`) — ein VoIP-Push trifft die App
+/// auch, bevor es dieses Plugin gibt. Die Raum-Befehle stehen in
+/// `AnrufPluginRaum.swift`.
+///
+/// Android-Pendant: `AnrufPlugin.java`, gleicher JS-Name, gleiche Methoden bis
+/// auf die Raum-Befehle, gleiches `aktion`-Ereignis.
+@objc(AnrufPlugin)
+public class AnrufPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AnrufPlugin"
+    public let jsName = "Anruf"
+    /// **Jede neue Methode gehört auch in `ANRUF_RAUM_METHODEN`** im Web
+    /// (`platform/anrufNativ.ts`) — sonst fährt eine Oberfläche gegen einen
+    /// älteren Bau einen halben Weg.
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "ankommen", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "beenden", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "voipToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "annehmen", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ausgehend", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "raumBeitreten", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "raumMikrofon", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "raumKamera", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "raumAusgabe", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "raumZustand", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "addListener", returnType: CAPPluginReturnCallback),
+        CAPPluginMethod(name: "removeAllListeners", returnType: CAPPluginReturnPromise)
+    ]
+
+    public override func load() {
+        Anrufverwaltung.geteilt.bruecke = self
+        Anrufverwaltung.geteilt.starten()
+        // Über `ereignisMelden`: der Raum meldet auch von LiveKits Fäden
+        // (B6, Begründung in `Befehlskette.swift`).
+        AnrufRaum.geteilt.melde = { [weak self] name, nutzlast in
+            self?.ereignisMelden(name, nutzlast)
+        }
+    }
+
+    @objc func ankommen(_ call: CAPPluginCall) {
+        let kennung = call.getString("callId") ?? ""
+        let name = call.getString("gegenstelle") ?? "Pulse"
+        let video = call.getBool("video") ?? false
+        DispatchQueue.main.async {
+            Anrufverwaltung.geteilt.klingeln(kennung: kennung, name: name, video: video)
+            call.resolve()
+        }
+    }
+
+    /// `grund` (optional, s. `Endgrund`): eine ältere Oberfläche schickt ihn
+    /// nicht — dann gilt „die Gegenseite", wie bisher.
+    ///
+    /// `callId` (optional): nur diesen Anruf beenden. Ohne — eine ältere
+    /// Oberfläche — jeden. Bis zur Nachprüfung der Fix-Runden beendete das
+    /// Aufräumen eines alten Anrufs im Web auch einen neuen, der ihn hier
+    /// inzwischen abgelöst hatte (R1).
+    @objc func beenden(_ call: CAPPluginCall) {
+        let grund = call.getString("grund").flatMap(Anrufverwaltung.Endgrund.init) ?? .gegenseite
+        let kennung = call.getString("callId").flatMap { $0.isEmpty ? nil : $0 }
+        DispatchQueue.main.async {
+            Anrufverwaltung.geteilt.beenden(kennung: kennung, grund: grund)
+            call.resolve()
+        }
+    }
+
+    @objc func voipToken(_ call: CAPPluginCall) {
+        call.resolve(["token": Anrufverwaltung.geteilt.token as Any,
+                      "faehigkeiten": Self.faehigkeiten])
+    }
+
+    /// **Was dieser Bau von sich sagt, wenn er seinen PushKit-Token anmeldet**
+    /// (Nachprüfung der Fix-Runden, S2). `dm_vordergrund`: DM-Mitteilungen
+    /// erscheinen nicht als Banner, solange die App vorn ist
+    /// (`MitteilungImVordergrund.swift`). Erst dann pusht der Server DMs an
+    /// dieses Gerät auch bei frischer WebSocket (`fcm_empfaenger.py`); ein
+    /// älterer Bau sagt nichts und bleibt beim alten Riegel — sonst bekäme er
+    /// jede DM im Vordergrund als Banner mit Ton.
+    static let faehigkeiten = [MitteilungImVordergrund.faehigkeit]
+
+    func tokenMelden(_ token: String?) {
+        guard let token else { return }
+        // `retainUntilConsumed`: der Token kann vor dem ersten Hörer kommen —
+        // der Push-Registry antwortet beim Start, die WebView lädt erst.
+        ereignisMelden("voipToken", ["token": token, "faehigkeiten": Self.faehigkeiten],
+                       aufbewahren: true)
+    }
+
+    func aktionMelden(aktion: String, kennung: String, kontext: [String: String]) {
+        // Ebenfalls aufbewahrt: ein kalt gestarteter Anruf wird angenommen,
+        // BEVOR die entfernte Web-App geladen ist. Ohne das Aufbewahren wäre
+        // die Annahme verloren und der Nutzer stünde in einem stummen Anruf.
+        var daten: [String: Any] = ["aktion": aktion, "callId": kennung]
+        for (schluessel, wert) in kontext { daten[schluessel] = wert }
+        ereignisMelden("aktion", daten, aufbewahren: true)
+    }
+}

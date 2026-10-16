@@ -16,7 +16,7 @@
 # 1.19.1 establishes it instantly. The AV1 temporal-delimiter patch below still
 # applies cleanly and is still needed (no upstream AV1 fix in 1.18/1.19).
 #
-# Why we maintain this fork — nine patches, two groups:
+# Why we maintain this fork — ten patches, two groups:
 #
 #   patches/         go against the MediaMTX source, applied right after clone
 #     0001  AMD-VAAPI-encoded AV1 freezes in WHEP after a few seconds because
@@ -45,6 +45,9 @@
 #           negotiates `nack` for video only, so a lost Opus packet on the
 #           way to the viewer never came back, although the native player
 #           asks for it. Negotiated only where the viewer offers it.
+#     0010  Key frame request as soon as a viewer ATTACHES
+#           (PULSE_KEYFRAME_ON_JOIN): WebKit, unlike Chromium, never asks on
+#           join, so an iOS viewer waited for the next regular key frame.
 #
 #   patches-vendor/  go against VENDORED third-party code, applied after
 #                    `go mod vendor` (see the step below)
@@ -129,7 +132,36 @@ ARG MEDIAMTX_VERSION=1.19.1
 # Variable dort eine Wirkung. Der unveroeffentlichte Zweig `feat/ios` (eigenes
 # 0008, Revision 8 unter dem alten Namensraum) rueckt beim Rebase damit auf
 # 0010 / Revision 10.
-ARG PULSE_REVISION=9
+#
+# 10 (2026-10-08, auf `feat/ios` als 8 entstanden): Patch `0010-vollbild-beim-beitritt` — MediaMTX fordert beim
+# Sender ein Vollbild an, sobald ein Zuschauer BEITRITT, nicht erst wenn einer
+# den Faden verliert. Hinter `PULSE_KEYFRAME_ON_JOIN`.
+#
+# Warum das trotz 0002 noetig ist: jener Weg ist rein reaktiv — er traegt eine
+# Anforderung nur, wenn ein Zuschauer eine SCHICKT. Chromium schickt beim
+# Beitritt eine, WebKit (Safari, alles unter iOS) nicht; es wartet stumm. Bei
+# 60 s Vollbild-Abstand sitzt ein iOS-Zuschauer deshalb bis zu eine Minute vor
+# Schwarz, ohne dass irgendwo ein Fehler steht. Am 2026-10-08 im minimalen
+# Aufbau nachgemessen (dieses Image, ein schlichter HEVC-Strom, MediaMTXs
+# eigene Zuschauerseite, kein Pulse-Klient): Chromium hatte nach unter 10 s
+# ein Bild, ein iPhone brauchte die vollen 60 s.
+#
+# Dass es so lange unbemerkt blieb, hat denselben Grund wie die Behebung: ein
+# Vollbild bedient den GANZEN Strom. Ein einziger Chromium-Zuschauer im Raum
+# deckt alle anderen mit ab.
+#
+# Revision 10 steht hier seit dem Landen von `feat/ios` (2026-10-16) —
+# bliebe sie auf 9, baute der Workflow `1.19.1-pulse9` NEU und mit 0010,
+# also derselbe Tag mit anderem Inhalt. Wie bei 8 und 9 gilt die Reihenfolge
+# oben: erst baut der Workflow `1.19.1-pulse10`, DANACH ziehen die drei
+# Compose-Dateien, `infra/self-host/Dockerfile` und die Stellen, die den Tag
+# nur nennen, nach — und erst dann wird `PULSE_KEYFRAME_ON_JOIN` an allen
+# fünf Stellen gesetzt (heute dort auskommentiert und als OFFEN markiert).
+# Bis dahin pinnen alle `1.19.1-pulse9`. Ausnahme ohne Container: der
+# Windows-Server-Bau (`desktop/scripts/fetch-win-native.ps1`) liest diese
+# Zeile selbst und baut `mediamtx.exe` gleich mit 0010 (Stempel
+# `1.19.1-pulse10`); ohne gesetzte Variable verhält sich 0010 wie upstream.
+ARG PULSE_REVISION=10
 ARG GO_VERSION=1.26
 
 # ── Stage 1: build the patched binary ──────────────────────────────────────

@@ -13,11 +13,10 @@
   import { kanalAnlegen } from '$lib/channels/anlegen';
   import { erstelleCommunity } from '$lib/guilds/erstellen';
   import type { Device } from '$lib/api/devices';
-  import FieldError from '$lib/components/feedback/FieldError.svelte';
   import CommunityDateiablage from '$lib/components/ablage/CommunityDateiablage.svelte';
+  import KanalHinweisTafel from '$lib/components/chat/KanalHinweisTafel.svelte';
   import { isPluginEnabledForGuild } from '$lib/plugins';
   import TamagotchiWidget from '../../../../../../../../plugins/tamagotchi/components/TamagotchiWidget.svelte';
-  import { Button } from '$lib/components/ui/button/index.js';
   import CreateGuildDialog from '$lib/components/CreateGuildDialog.svelte';
   import CreateChannelDialog from '$lib/components/CreateChannelDialog.svelte';
   import { auth } from '$lib/stores/auth.svelte';
@@ -32,19 +31,18 @@
   import { roles } from '$lib/stores/roles.svelte';
   import { channelPermissions } from '$lib/stores/channelPermissions.svelte';
   import { Perm } from '$lib/permissions/bitfield';
-  import { chatApi } from '$lib/api/chat';
   import { joinGuildByInvite } from '$lib/guilds/joinByInvite';
   import { useGatewayDeletedListener, useGatewayListener } from '$lib/ws/useGatewayListener.svelte';
   import { ABLAGE_KANAL_ENABLED } from '$lib/featureFlags';
   import { kanalEreignisEinspeisen } from '$lib/krypto/gruppe/kanalSitzungStore';
   import { kanalWsEreignisAbbilden } from '$lib/krypto/gruppe/kanalEreignisAbbildung';
   import { voice } from '$lib/voice/livekit.svelte';
+  import { routenBeitrittVerdrahten } from '$lib/voice/routenBeitritt.svelte';
   import { navDrawer } from '$lib/stores/navDrawer.svelte';
   import { viewport } from '$lib/stores/viewport.svelte';
   import { erstelleKanalWechsel } from '$lib/components/chat/kanalWechsel.svelte';
   import { erstelleKanalNachrichtenAktionen } from '$lib/components/chat/kanalNachrichtenAktionen';
-  import type { Channel, Message } from '$lib/api/types';
-  import { toast } from 'svelte-sonner';
+  import type { Channel } from '$lib/api/types';
   import { m as pm } from '$lib/paraglide/messages.js';
 
   let guildId = $derived(page.params.guildId ?? '');
@@ -109,26 +107,13 @@
   // schon vorher statt still zu scheitern. Verlauf bleibt lesbar.
   let legacyReadonly = $derived(!!activeChannel?.legacy_readonly);
 
-  // Auf Mobil hat ein Voice-Kanal keine eigene Vollbild-Seite: stattdessen
-  // bleibt die Kanal-Liste sichtbar (oben Text-, unten Sprachkanäle). Zusätzlich
-  // Auto-Rejoin beim Laden/Navigieren auf einen Voice-Kanal — sonst ist man nach
-  // einem Reload "auf dem Kanal", aber nicht verbunden (→ Text-Kanal zeigt
-  // Vollbild statt Karten-Stapel). Spiegelt das frühere
-  // VoiceChannelView.onMount-Auto-Join, das mit der Vollbild-Seite entfiel.
-  // Nur EINMAL pro Kanal-Landing (Guard) und untracked gelesen — NICHT reaktiv
-  // auf Verbindungsabbruch, sonst würde "Verlassen" sofort wieder beitreten;
-  // und nur, wenn wir nirgends im Voice sind (kein Auto-Switch).
-  let autoJoinedVoiceChannel = '';
+  // Mobil: Auto-Beitritt beim Landen auf einem Sprachkanal — nur nach einem
+  // Tipp in der App und erst, wenn der Start durch ist (Regel und Gründe in
+  // `voice/routenBeitritt.svelte.ts`).
   $effect(() => {
-    if (!viewport.isMobile || !isVoiceChannel) return;
-    navDrawer.open = true;
-    const ch = activeChannel;
-    if (!ch || autoJoinedVoiceChannel === ch.id) return;
-    autoJoinedVoiceChannel = ch.id;
-    untrack(() => {
-      if (!voice.connected && !voice.connecting) void voice.connect(ch.id, ch.name);
-    });
+    if (viewport.isMobile && isVoiceChannel) navDrawer.open = true;
   });
+  routenBeitrittVerdrahten(() => (viewport.isMobile && isVoiceChannel ? activeChannel : null));
 
   // Mobil: Nach dem Auflegen zurück in die Community-Übersicht — die Voice-
   // Vollbild-Ansicht ist ein Detail-Screen ohne Leiste; wer auflegt, will
@@ -316,22 +301,6 @@
     await kanalWechsel.onChannelDeleted(guildId, deletedId, channelId);
   }
 
-  async function togglePin(msg: Message) {
-    try {
-      if (msg.pinned_at) {
-        await chatApi.unpinMessage(msg.id);
-      } else {
-        await chatApi.pinMessage(msg.id);
-      }
-      // WS pin_update spiegelt den Zustand an alle Kanal-Mitglieder.
-    } catch (e) {
-      toast.error(
-        (e as Error).message.includes('pin_limit_reached') ? pm.pin_limit_reached() : pm.pin_failed()
-      );
-      console.error(e);
-    }
-  }
-
   // **Das geoeffnete Geraet steht in der Adresse** (`?device=`), nicht in einem
   // Zustand: so ueberlebt es einen Neuladen, ist verlinkbar und der
   // Zurueck-Knopf tut, was er soll. Der Kanal in der Adresse bleibt dabei der
@@ -400,7 +369,7 @@
     onEditMessage={kanalNachrichten.editMessage}
     onDeleteMessage={kanalNachrichten.deleteMessage}
     onToggleReaction={kanalNachrichten.toggleReaction}
-    onTogglePin={togglePin}
+    onTogglePin={kanalNachrichten.togglePin}
   />
 {/snippet}
 
@@ -431,36 +400,15 @@
     <CommunityDateiablage guildId={guildId} {istBesitzer} />
   {/key}
 {:else if guildSuspended}
-  <section
-    class="glass-panel flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 rounded-none p-8 text-center nicht-handy:rounded-2xl"
-    data-testid="community-suspended"
-  >
-    <h2 class="text-text-bright text-lg font-semibold">{pm.community_suspended_title()}</h2>
-    <p class="text-text-muted max-w-sm text-sm">{pm.community_suspended_body()}</p>
-  </section>
+  <KanalHinweisTafel art="gesperrt" />
 {:else if kanalWechsel.serverSchlaeft}
-  <!-- App-Hosting (2026-10-03): Der Host-Rechner dieser Community ist aus —
-       der Normalzustand eines App-Host-Servers, kein Fehlerfall. Verständliche
-       Tafel statt technischem Fehlertext; Retry misst die Anwesenheit frisch. -->
-  <section
-    class="glass-panel flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 rounded-none p-8 text-center nicht-handy:rounded-2xl"
-    data-testid="server-schlaeft"
-  >
-    <h2 class="text-text-bright text-lg font-semibold">{pm.server_schlaeft_seite_titel()}</h2>
-    <p class="text-text-muted max-w-sm text-sm">{pm.server_schlaeft_seite_text()}</p>
-    <Button
-      onclick={() => kanalWechsel.retry(guildId, channelId)}
-      data-testid="load-retry"
-    >{pm.channel_page_retry()}</Button>
-  </section>
+  <KanalHinweisTafel art="schlaeft" onRetry={() => kanalWechsel.retry(guildId, channelId)} />
 {:else if kanalWechsel.loadError}
-  <section class="glass-panel flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-none p-8 nicht-handy:rounded-2xl">
-    <FieldError message={kanalWechsel.loadError} testId="load-error" />
-    <Button
-      onclick={() => kanalWechsel.retry(guildId, channelId)}
-      data-testid="load-retry"
-    >{pm.channel_page_retry()}</Button>
-  </section>
+  <KanalHinweisTafel
+    art="fehler"
+    fehler={kanalWechsel.loadError}
+    onRetry={() => kanalWechsel.retry(guildId, channelId)}
+  />
 {:else}
   {@render chatBody()}
 {/if}

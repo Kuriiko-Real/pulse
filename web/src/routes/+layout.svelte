@@ -18,7 +18,7 @@
   import { serversStore } from '$lib/api/servers.svelte';
   import { activeServer } from '$lib/stores/active-server.svelte';
   import { initSelfHostReauth } from '$lib/api/self-host-reauth';
-  import { isElectron } from '$lib/platform/runtime';
+  import { isCapacitorIOS, isElectron } from '$lib/platform/runtime';
   import {
     checkNativeUpdate,
     nativeUpdateAlreadySeen,
@@ -27,6 +27,7 @@
   import { m } from '$lib/paraglide/messages.js';
   import { gatewayPool } from '$lib/ws/gateway-pool.svelte';
   import { initLocale } from '$lib/i18n';
+  import { navigationsHerkunftVerfolgen } from '$lib/navigation/navigationsHerkunft';
   import { starteKonsolenFang } from '$lib/diagnose/konsole';
   import { einladungAusDeepLink } from '$lib/einladung/deepLink';
   
@@ -57,6 +58,12 @@
   // Self-Host Re-Auth-Hook (Ticket-Anmeldung) registrieren — wirkt für
   // jeden 401/Session-Expiry-Trigger aus dem API-Client.
   initSelfHostReauth();
+  // Woher jede Navigation kam (Tipp in der App, von aussen, Zurück) — die
+  // Kanal-Route tritt nur bei einem Tipp in der App bei (`navigation/herkunft.ts`).
+  navigationsHerkunftVerfolgen();
+  // iOS-Hülle am <html> markiert — für CSS, das nur dort gilt (`app.css`,
+  // `overscroll-behavior`). Browser, Electron und Android bleiben unmarkiert.
+  if (isCapacitorIOS()) document.documentElement.dataset.huelle = 'ios';
 
   let { children } = $props();
 

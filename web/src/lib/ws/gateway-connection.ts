@@ -26,6 +26,7 @@ import {
   WS_CLOSE,
   WS_PING_INTERVAL_MS,
   WS_PONG_TIMEOUT_MS,
+  WS_WACH_FRIST_MS,
 } from '$lib/api/constants';
 import { guilds } from '$lib/stores/guilds.svelte';
 import { auth } from '$lib/stores/auth.svelte';
@@ -34,6 +35,7 @@ import { sounds } from '$lib/sounds/engine';
 import { dispatch } from './handler-registry';
 import { bootstrapHandlersOnce } from './gateway-handlers-bootstrap';
 import { gapFillAll, gapFillChannel } from './gapFill';
+import { wachEntscheid } from './wachentscheid';
 import {
   backgroundEligible,
   geraeteEligible,
@@ -164,6 +166,11 @@ export class GatewayConnection {
   private closeHooks = new Set<() => void>();
   private wantConnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Läuft gerade eine Weck-Prüfung (Ping mit kurzer Frist)? */
+  private wachFrist: ReturnType<typeof setTimeout> | null = null;
+  /** Zeitpunkt der letzten Weck-Prüfung — die drei Auslöser feuern beim
+   *  Entsperren eines Telefons gern gemeinsam (s. `wachentscheid.ts`). */
+  private letzteWachPruefung = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   /** Timer für den Token-Austausch am offenen Socket (nur Cloud — auf einem
    *  Self-Host stösst `api/self-host-reauth.ts` den Austausch an, sobald es
@@ -198,7 +205,18 @@ export class GatewayConnection {
 
   /** Reaktiv: erstes Hello-Frame des Servers (nur Self-Host). */
   helloMeta: HelloMeta | null = null;
-  /** Reaktiv: aktueller Connection-State; UI/Banner-Trigger (Phase 4.3). */
+  /**
+   * Aktueller Connection-State — Quelle für UI-Banner und Status-Punkt.
+   *
+   * Selbst NICHT reaktiv: diese Datei ist eine schlichte `.ts`, eine Rune darf
+   * hier nicht stehen (sie reisst zur Laufzeit die Route ab, s. CLAUDE.md).
+   * Das Reaktive liegt in `server-state.svelte.ts` — **und zwar nur dort.**
+   * Beim Bau des Offline-Streifens (2026-10-08) stand hier kurz ein
+   * Abonnement-Mechanismus für eine zweite Spiegelung. Die Brücke daneben kann
+   * dasselbe, deckt das LAZY-Entstehen einer Verbindung beiläufig mit ab und
+   * sagt in ihrem eigenen Kopf, dass eine dritte Spiegelung nicht gebaut
+   * werden soll — sie hatte recht, der Mechanismus ist wieder weg.
+   */
   state: ConnectionState = 'idle';
 
   constructor(opts: GatewayConnectionOpts) {
@@ -360,10 +378,26 @@ export class GatewayConnection {
     return () => this.closeHooks.delete(hook);
   }
 
+  /** Will dieser Klient verbunden SEIN? Nur lesbar, nicht setzbar — gesetzt
+   *  wird es allein von `connect()`/`disconnect()`.
+   *
+   *  Die Oberfläche braucht es, um einen GEWOLLTEN Abbau (Server-Wechsel,
+   *  Abmelden) von einem Verlust zu unterscheiden; ohne diese Trennung zeigte
+   *  jeder Server-Wechsel kurz „keine Verbindung". */
+  get gewollt(): boolean {
+    return this.wantConnected;
+  }
+
   async connect(): Promise<void> {
     this.wantConnected = true;
     if (this.ws && this.ws.readyState <= 1) return;
     if (this.connectPromise) return this.connectPromise;
+    // Ein Socket im Abbau wird nicht übernommen, sondern abgehängt. Sonst
+    // bliebe er `this.ws`, bis `_dial` den Nachfolger einträgt: ein `close`
+    // davor bildete seinen Code über den laufenden Aufbau ab und plante eine
+    // Wiederwahl daneben, eins danach fände einen fremden Socket vor — und
+    // die close-Hörer erführen den Abriss nie (s. `_abhaengen`).
+    if (this.ws) this._abhaengen(this.ws);
     this._readyPromise = new Promise((resolve) => {
       this._readyResolve = resolve;
     });
@@ -579,6 +613,11 @@ export class GatewayConnection {
         resolve();
       });
       ws.addEventListener('message', (event) => {
+        // Nur der AKTUELLE Socket spricht in die Stores. Ein abgehängter
+        // (disconnect(), oder ein neuerer hat übernommen — s. `_abhaengen`)
+        // liefert sonst doppelte ready/message/dm_bump; der Direktweg
+        // (`DirectWebSocket`) reicht auch im Abbau noch Rahmen durch.
+        if (this.ws !== ws) return;
         let evt: ServerEvent;
         try {
           evt = JSON.parse(event.data) as ServerEvent;
@@ -660,33 +699,62 @@ export class GatewayConnection {
         this._dispatch(evt);
       });
       ws.addEventListener('close', (event) => {
-        this.ws = null;
-        this._stopHeartbeat();
-        this._stopTokenErneuerung();
-        // Bughunt Runde 43: auch den Gapfill-Fallback-Timer killen — er war
-        // der eine Lifecycle-Timer, der weder im close noch in disconnect()
-        // aufgeräumt wurde und nach einem open-ohne-hello gegen die
-        // bekannte-tote Verbindung einen REST-Burst losschickte.
-        this._stopGapfillTimer();
-        // Vor jeder Zustands-Abbildung und vor dem Reconnect: die Hörer sollen
-        // den Abriss erfahren, egal ob danach neu gewählt wird oder nicht.
-        // Kopie, weil ein Hörer sich im Ruf abmelden darf.
-        for (const h of [...this.closeHooks]) h();
-        // Only map the close code (and potentially overwrite the state) when
-        // the disconnect was NOT intentional. disconnect() already sets state
-        // to 'idle' synchronously before ws.close(); letting _mapCloseCode run
-        // afterwards would overwrite that with 'closed' (or another code-
-        // derived value), leaving the state wrong after a clean disconnect.
-        if (this.wantConnected) this._mapCloseCode(event.code);
-        // Reject the _dial promise if the socket never opened, then fall
-        // through to schedule a reconnect regardless (wantConnected check
-        // below). These two paths are intentionally not mutually exclusive:
-        // we want the promise to reject *and* a retry to be scheduled.
+        // Das _dial-Versprechen gehört zu DIESEM Socket — es wird abgelehnt,
+        // auch wenn er längst abgehängt ist.
         if (!opened) reject(new Error('ws closed before open'));
+        // Ein schon abgehängter Socket fasst nichts mehr an: weder `this.ws`
+        // noch Zeitgeber, Zustand oder Wiederwahl gehören noch ihm. Vorher
+        // nullte das späte close eines alten Sockets den NEUEN, stoppte dessen
+        // Herzschlag und plante einen dritten — der zweite blieb verwaist
+        // offen und dispatchte weiter (Bughunt 2026-10-11, T7).
+        if (!this._abhaengen(ws)) return;
+        // Nur ein UNGEWOLLTER Abriss bildet seinen Code ab und wählt neu. Das
+        // close nach disconnect() kommt hier schon nicht mehr an (abgehängt,
+        // s. oben); die Weiche hält jeden anderen Weg ab, der `wantConnected`
+        // schon abgeschaltet hat — `_mapCloseCode` überschriebe sonst dessen
+        // Zustand. Zweimal gefragt statt einmal: `_mapCloseCode` schaltet es
+        // bei MFA und unbestätigter E-Mail selbst ab, dann ohne Wiederwahl.
+        if (this.wantConnected) this._mapCloseCode(event.code);
         if (this.wantConnected) this._scheduleReconnect();
       });
       ws.addEventListener('error', () => { /* Browser feuert direkt close. */ });
     });
+  }
+
+  /**
+   * Den Socket von der Verbindung lösen — genau einmal je Socket, und nur,
+   * solange er der aktuelle ist. `false` heisst: war er nicht (mehr).
+   *
+   * Drei Wege führen hierher: sein eigenes `close`, `disconnect()` und
+   * `connect()` neben einem Socket im Abbau — so verbindet die Weck-Prüfung
+   * sofort neu, ohne auf das `close` zu warten (`wachentscheid.ts`). Der
+   * Abbau kann dauern — auf totem Netz kommt die Antwort auf den
+   * Schliess-Handschlag nie, und wie lange WebKit dann in CLOSING bleibt,
+   * ist ungemessen —, und sein `close` kommt womöglich erst, wenn der
+   * Nachfolger längst steht. Deshalb hängt alles, was dem Socket gehört, an
+   * dieser einen Stelle, und das späte `close` findet hier nur noch einen
+   * fremden Socket vor.
+   *
+   * Die close-Hörer laufen HIER, nicht erst beim `close`-Ereignis: für sie
+   * zählt, dass die Verbindung den Socket verloren hat. Kämen sie erst mit
+   * dem späten `close`, sähe die Fernsteuer-Wacht (`remote/wachten.ts`) den
+   * Abriss nach dem `ready` des Nachfolgers und reklamierte ihre Sitzung
+   * nicht — so steht es dort im Code, gemessen ist es nicht.
+   */
+  private _abhaengen(ws: SocketLike): boolean {
+    if (this.ws !== ws) return false;
+    this.ws = null;
+    this._stopHeartbeat();
+    this._stopTokenErneuerung();
+    // Bughunt Runde 43: auch den Gapfill-Fallback-Timer killen — er war
+    // der eine Lifecycle-Timer, der weder im close noch in disconnect()
+    // aufgeräumt wurde und nach einem open-ohne-hello gegen die
+    // bekannte-tote Verbindung einen REST-Burst losschickte.
+    this._stopGapfillTimer();
+    this._stopWachFrist();
+    // Kopie, weil ein Hörer sich im Ruf abmelden darf.
+    for (const h of [...this.closeHooks]) h();
+    return true;
   }
 
   private _mapCloseCode(code: number): void {
@@ -964,6 +1032,67 @@ export class GatewayConnection {
     this.pushToken(frisch);
   }
 
+  /**
+   * Weck-Prüfung: Netz ist zurück, Tab ist sichtbar, App ist wieder vorn.
+   *
+   * Gerufen von `netzwache.ts`, nicht von der Oberfläche. Die Entscheidung
+   * selbst steht geprüft in `wachentscheid.ts`; hier stehen nur die drei
+   * Handgriffe dazu.
+   *
+   * **Der Backoff-Zähler wird dabei NICHT zurückgesetzt**, und das ist
+   * Absicht: ein Server, der uns mit 4044/4045/4070 aktiv abweist, soll sich
+   * weiter bis 300 s auseinanderstaffeln (Bughunt Runde 43, Begründung an
+   * `this.attempt = 0`). Ein wiedergekehrtes Netz bekommt EINEN sofortigen
+   * Versuch — nicht eine neue Leiter. Und nach einer solchen Abweisung gar
+   * keinen: dort wartet die Weckprüfung auf die Staffel
+   * (`wachentscheid.ts::ABWEISENDE_ZUSTAENDE`).
+   */
+  wachPruefen(): void {
+    const befund = wachEntscheid({
+      gewuenscht: this.wantConnected,
+      zustand: this.state,
+      bereit: this.ws ? this.ws.readyState : null,
+      pruefungLaeuft: this.wachFrist !== null,
+      seitLetzterPruefungMs: Date.now() - this.letzteWachPruefung
+    });
+    if (befund === 'nichts') return;
+    this.letzteWachPruefung = Date.now();
+    if (befund === 'sofort-verbinden') {
+      this._stopReconnect();
+      void this.connect().catch(() => undefined);
+      return;
+    }
+    // 'ping-pruefen': offener Socket, der nach einem Netzwechsel tot sein
+    // kann. Ob ein Pong kam, wird am Zeitstempel verglichen statt an einem
+    // eigenen Merker — `lastPongAt` ist dafür schon die Wahrheit.
+    const vorher = this.lastPongAt;
+    const ws = this.ws;
+    this._sendRaw({ op: 'ping' });
+    this.wachFrist = setTimeout(() => {
+      this.wachFrist = null;
+      if (this.lastPongAt !== vorher) return; // Pong kam — gesund.
+      if (!ws || ws !== this.ws) return; // Socket ist inzwischen ein anderer.
+      // Tot: schliessen bringt das `close`-Ereignis, das das abgerissene TCP
+      // nie geliefert hat — derselbe Weg wie beim Herzschlag.
+      this._stopHeartbeat();
+      try {
+        ws.close();
+      } catch {
+        /* schliesst schon */
+      }
+      // **Und sofort neu wählen, nicht erst auf das `close` warten**
+      // (iOS-Bughunt 2, F6). Der Socket steht jetzt in CLOSING; sein `close`
+      // kommt erst mit dem Ende des Schliess-Handschlags, und der endet auf
+      // totem Netz nie — es sei denn, WebKit gibt auf, nach ungemessener
+      // Zeit. Bis dahin stand die App nach dem Aufwachen ohne Verbindung da.
+      // Die zweite Prüfung sieht den Socket im Abbau und verbindet sofort
+      // (`wachentscheid.ts`, CLOSING → `sofort-verbinden`); `connect` hängt
+      // ihn dabei ab. Die Frist liegt über dem Mindestabstand zweier
+      // Prüfungen, der greift hier also nicht.
+      this.wachPruefen();
+    }, WS_WACH_FRIST_MS);
+  }
+
   private _scheduleReconnect(): void {
     if (this.reconnectTimer) return;
     const wait =
@@ -973,6 +1102,27 @@ export class GatewayConnection {
       this.reconnectTimer = null;
       void this.connect().catch(() => undefined);
     }, wait);
+  }
+
+  /** Den gestaffelten Wiederwahl-Versuch stoppen. Der Zähler `attempt` bleibt
+   *  dabei stehen — die Staffelung soll sich durch ein Abbrechen nicht
+   *  zurücksetzen (Begründung an `this.attempt = 0` im hello-Zweig). */
+  private _stopReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  /** Die Frist der Weck-Prüfung stoppen. Muss überall mit, wo der Socket
+   *  endet — ihr Rückruf fasst sonst einen Socket an, der schon weg ist.
+   *  (Er prüft das zusätzlich selbst; beides, weil ein hängender Zeitgeber
+   *  auch ohne Schaden eine lose Spur ist.) */
+  private _stopWachFrist(): void {
+    if (this.wachFrist) {
+      clearTimeout(this.wachFrist);
+      this.wachFrist = null;
+    }
   }
 
   /** Sicherheitsnetz-Timer (REST-Lückenfill bei Servern ohne hello) stoppen. */
@@ -988,13 +1138,12 @@ export class GatewayConnection {
     this._stopHeartbeat();
     this._stopTokenErneuerung();
     this._stopGapfillTimer();
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    this._stopWachFrist();
+    this._stopReconnect();
+    const ws = this.ws;
+    if (ws) {
+      this._abhaengen(ws);
+      ws.close();
     }
     this.subs.clear();
     this.watchJoins.clear();

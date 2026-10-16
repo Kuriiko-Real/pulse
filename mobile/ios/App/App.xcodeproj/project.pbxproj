@@ -11,10 +11,87 @@
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* PrivacyInfo.xcprivacy */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
+		A1B2C3D4E5F60718293A4B61 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B60 /* InfoPlist.strings */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		A1B2C3D4E5F6071800000004 /* UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000003 /* UITests.swift */; };
+		A1B2C3D4E5F60718000000C1 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000000C2 /* GoogleService-Info.plist */; };
+		A1B2C3D4E5F60718000000C5 /* pulse-push.caf in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000000C6 /* pulse-push.caf */; };
+		A1B2C3D4E5F60718000000C7 /* AudioSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000000C8 /* AudioSessionPlugin.swift */; };
+		A1B2C3D4E5F6071800000173 /* SprachePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000174 /* SprachePlugin.swift */; };
+		A1B2C3D4E5F6071800000181 /* SpracheRaumZustand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000182 /* SpracheRaumZustand.swift */; };
+		A1B2C3D4E5F60718000001D5 /* SpracheRaumDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001D6 /* SpracheRaumDelegate.swift */; };
+		A1B2C3D4E5F6071800000183 /* SpracheRaumTaub.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000184 /* SpracheRaumTaub.swift */; };
+		A1B2C3D4E5F60718000001A7 /* Wiedergabebegrenzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001A8 /* Wiedergabebegrenzer.swift */; };
+		A1B2C3D4E5F60718000001A9 /* WiedergabebegrenzerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001AA /* WiedergabebegrenzerProbe.swift */; };
+		A1B2C3D4E5F6071800000185 /* SpracheAnsicht.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000186 /* SpracheAnsicht.swift */; };
+		A1B2C3D4E5F60718000001B0 /* SpracheBildImBild.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001B1 /* SpracheBildImBild.swift */; };
+		A1B2C3D4E5F60718000001B2 /* SpracheBildImBildInhalt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001B3 /* SpracheBildImBildInhalt.swift */; };
+		A1B2C3D4E5F60718000001B4 /* SpracheBildImBildProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001B5 /* SpracheBildImBildProbe.swift */; };
+		A1B2C3D4E5F6071800000187 /* SpracheKachel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000188 /* SpracheKachel.swift */; };
+		A1B2C3D4E5F6071800000189 /* SpracheSteuerleiste.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607180000018A /* SpracheSteuerleiste.swift */; };
+		A1B2C3D4E5F607180000018B /* SpracheAnsichtHalter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607180000018C /* SpracheAnsichtHalter.swift */; };
+		A1B2C3D4E5F60718000001A5 /* SpracheAnsichtProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001A6 /* SpracheAnsichtProbe.swift */; };
+		A1B2C3D4E5F607180000018D /* SprachePluginProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607180000018E /* SprachePluginProbe.swift */; };
+		A1B2C3D4E5F607180000018F /* SpracheRaumSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000190 /* SpracheRaumSession.swift */; };
+		A1B2C3D4E5F607180000019D /* AnrufProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607180000019E /* AnrufProbe.swift */; };
+		A1B2C3D4E5F607180000019F /* AnrufPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001A0 /* AnrufPush.swift */; };
+		A1B2C3D4E5F60718000001A1 /* AnrufPushAusgang.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001A2 /* AnrufPushAusgang.swift */; };
+		A1B2C3D4E5F60718000001A3 /* AnrufPushProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001A4 /* AnrufPushProbe.swift */; };
+		A1B2C3D4E5F60718000001C3 /* AnrufPushProbe2.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001C2 /* AnrufPushProbe2.swift */; };
+		A1B2C3D4E5F60718000001C1 /* BrueckeProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001C0 /* BrueckeProbe.swift */; };
+		A1B2C3D4E5F6071800000191 /* Anrufverwaltung.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000192 /* Anrufverwaltung.swift */; };
+		A1B2C3D4E5F6071800000193 /* AnrufCallKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000194 /* AnrufCallKit.swift */; };
+		A1B2C3D4E5F6071800000195 /* AnrufSitzung.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000196 /* AnrufSitzung.swift */; };
+		A1B2C3D4E5F6071800000197 /* AnrufRaum.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000198 /* AnrufRaum.swift */; };
+		A1B2C3D4E5F6071800000199 /* AnrufPluginRaum.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607180000019A /* AnrufPluginRaum.swift */; };
+		A1B2C3D4E5F607180000019B /* SpracheRaumStumm.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607180000019C /* SpracheRaumStumm.swift */; };
+		A1B2C3D4E5F6071800000171 /* SpracheRaum.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000172 /* SpracheRaum.swift */; };
+		A1B2C3D4E5F6071800000151 /* AudioSessionJetztLaeuft.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000152 /* AudioSessionJetztLaeuft.swift */; };
+		A1B2C3D4E5F6071800000141 /* AudioSessionAusgabe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000142 /* AudioSessionAusgabe.swift */; };
+		A1B2C3D4E5F60718000000D1 /* ReviewPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000000D2 /* ReviewPlugin.swift */; };
+		A1B2C3D4E5F60718000000E1 /* OrientationPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000000E2 /* OrientationPlugin.swift */; };
+		A1B2C3D4E5F60718000000F1 /* WachhaltenPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000000F2 /* WachhaltenPlugin.swift */; };
+		A1B2C3D4E5F6071800000101 /* QrScanPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000102 /* QrScanPlugin.swift */; };
+		A1B2C3D4E5F6071800000111 /* AnrufPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000112 /* AnrufPlugin.swift */; };
+		A1B2C3D4E5F6071800000121 /* SchnellwahlPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000122 /* SchnellwahlPlugin.swift */; };
+		A1B2C3D4E5F6071800000131 /* SperrePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000132 /* SperrePlugin.swift */; };
+		7E11E0000000000000000070 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000051 /* ShareViewController.swift */; };
+		7E11E0000000000000000071 /* TeilenEinsammeln.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000052 /* TeilenEinsammeln.swift */; };
+		7E11E0000000000000000072 /* TeilenBild.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000053 /* TeilenBild.swift */; };
+		7E11E0000000000000000073 /* AppGruppe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000056 /* AppGruppe.swift */; };
+		7E11E0000000000000000074 /* TeilenAblage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000057 /* TeilenAblage.swift */; };
+		7E11E0000000000000000075 /* AppGruppe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000056 /* AppGruppe.swift */; };
+		7E11E0000000000000000076 /* TeilenAblage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000057 /* TeilenAblage.swift */; };
+		A1B2C3D4E5F60718000001D3 /* TeilenWettlauf.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001D2 /* TeilenWettlauf.swift */; };
+		A1B2C3D4E5F60718000001D4 /* TeilenWettlauf.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001D2 /* TeilenWettlauf.swift */; };
+		7E11E0000000000000000077 /* ShareReceiverPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000058 /* ShareReceiverPlugin.swift */; };
+		7E11E0000000000000000078 /* ShareReceiverProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000059 /* ShareReceiverProbe.swift */; };
+		7E11E0000000000000000079 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000050 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7E11E000000000000000007A /* TeilenUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E000000000000000005A /* TeilenUITests.swift */; };
+		7E22E0000000000000000200 /* PulseWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000101 /* PulseWidgets.swift */; };
+		7E22E0000000000000000201 /* UngelesenWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000102 /* UngelesenWidget.swift */; };
+		7E22E0000000000000000202 /* SpracheAktivitaetWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000103 /* SpracheAktivitaetWidget.swift */; };
+		7E22E0000000000000000203 /* SpracheAktivitaetTeile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000104 /* SpracheAktivitaetTeile.swift */; };
+		7E22E0000000000000000204 /* SpracheAktivitaetDaten.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000107 /* SpracheAktivitaetDaten.swift */; };
+		7E22E0000000000000000205 /* SpracheAktivitaetAbsichten.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000108 /* SpracheAktivitaetAbsichten.swift */; };
+		7E22E0000000000000000206 /* UngelesenAblage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000109 /* UngelesenAblage.swift */; };
+		7E22E0000000000000000210 /* SpracheAktivitaetDaten.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000107 /* SpracheAktivitaetDaten.swift */; };
+		7E22E0000000000000000211 /* SpracheAktivitaetAbsichten.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000108 /* SpracheAktivitaetAbsichten.swift */; };
+		7E22E0000000000000000212 /* UngelesenAblage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000109 /* UngelesenAblage.swift */; };
+		7E22E0000000000000000213 /* SpracheLiveAktivitaet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E000000000000000010A /* SpracheLiveAktivitaet.swift */; };
+		A1B2C3D4E5F60718000001C5 /* SpracheLiveAktivitaetKnoepfe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001C4 /* SpracheLiveAktivitaetKnoepfe.swift */; };
+		7E22E0000000000000000214 /* UngelesenPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E000000000000000010B /* UngelesenPlugin.swift */; };
+		A1B2C3D4E5F60718000001D1 /* MitteilungImVordergrund.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718000001D0 /* MitteilungImVordergrund.swift */; };
+		7E22E0000000000000000215 /* SpracheLiveAktivitaetProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E000000000000000010C /* SpracheLiveAktivitaetProbe.swift */; };
+		7E22E0000000000000000216 /* UngelesenProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E000000000000000010D /* UngelesenProbe.swift */; };
+		7E22E0000000000000000217 /* Befehlskette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E22E000000000000000010E /* Befehlskette.swift */; };
+		7E22E0000000000000000207 /* AppGruppe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E11E0000000000000000056 /* AppGruppe.swift */; };
+		7E22E0000000000000000220 /* WidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E22E0000000000000000100 /* WidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7E22E0000000000000000221 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E22E000000000000000010F /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,11 +101,104 @@
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5E /* InfoPlist.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5F /* InfoPlist.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B60 /* InfoPlist.strings */ = {isa = PBXVariantGroup; children = (A1B2C3D4E5F60718293A4B5E /* InfoPlist.strings */, A1B2C3D4E5F60718293A4B5F /* InfoPlist.strings */,); name = InfoPlist.strings; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		A1B2C3D4E5F6071800000002 /* AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6071800000003 /* UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000C2 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = GoogleService-Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000C4 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = App.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000C6 /* pulse-push.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pulse-push.caf; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000C8 /* AudioSessionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000174 /* SprachePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SprachePlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000182 /* SpracheRaumZustand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheRaumZustand.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001D6 /* SpracheRaumDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheRaumDelegate.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000184 /* SpracheRaumTaub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheRaumTaub.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001A8 /* Wiedergabebegrenzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wiedergabebegrenzer.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001AA /* WiedergabebegrenzerProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiedergabebegrenzerProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000186 /* SpracheAnsicht.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAnsicht.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001B1 /* SpracheBildImBild.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheBildImBild.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001B3 /* SpracheBildImBildInhalt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheBildImBildInhalt.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001B5 /* SpracheBildImBildProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheBildImBildProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000188 /* SpracheKachel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheKachel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607180000018A /* SpracheSteuerleiste.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheSteuerleiste.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607180000018C /* SpracheAnsichtHalter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAnsichtHalter.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001A6 /* SpracheAnsichtProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAnsichtProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607180000018E /* SprachePluginProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SprachePluginProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000190 /* SpracheRaumSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheRaumSession.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607180000019E /* AnrufProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001A0 /* AnrufPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufPush.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001A2 /* AnrufPushAusgang.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufPushAusgang.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001A4 /* AnrufPushProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufPushProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001C2 /* AnrufPushProbe2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufPushProbe2.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001C0 /* BrueckeProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrueckeProbe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000192 /* Anrufverwaltung.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Anrufverwaltung.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000194 /* AnrufCallKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufCallKit.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000196 /* AnrufSitzung.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufSitzung.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000198 /* AnrufRaum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufRaum.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607180000019A /* AnrufPluginRaum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufPluginRaum.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607180000019C /* SpracheRaumStumm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheRaumStumm.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000172 /* SpracheRaum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheRaum.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000152 /* AudioSessionJetztLaeuft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionJetztLaeuft.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000142 /* AudioSessionAusgabe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionAusgabe.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000D2 /* ReviewPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000E2 /* OrientationPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000000F2 /* WachhaltenPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WachhaltenPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000102 /* QrScanPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QrScanPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000112 /* AnrufPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnrufPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000122 /* SchnellwahlPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchnellwahlPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000132 /* SperrePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SperrePlugin.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000050 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E11E0000000000000000051 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000052 /* TeilenEinsammeln.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeilenEinsammeln.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000053 /* TeilenBild.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeilenBild.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000056 /* AppGruppe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGruppe.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000057 /* TeilenAblage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeilenAblage.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001D2 /* TeilenWettlauf.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeilenWettlauf.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000058 /* ShareReceiverPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareReceiverPlugin.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000059 /* ShareReceiverProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareReceiverProbe.swift; sourceTree = "<group>"; };
+		7E11E0000000000000000054 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7E11E0000000000000000055 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
+		7E11E000000000000000005A /* TeilenUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeilenUITests.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000100 /* WidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E22E0000000000000000101 /* PulseWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PulseWidgets.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000102 /* UngelesenWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UngelesenWidget.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000103 /* SpracheAktivitaetWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAktivitaetWidget.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000104 /* SpracheAktivitaetTeile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAktivitaetTeile.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000107 /* SpracheAktivitaetDaten.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAktivitaetDaten.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000108 /* SpracheAktivitaetAbsichten.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheAktivitaetAbsichten.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000109 /* UngelesenAblage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UngelesenAblage.swift; sourceTree = "<group>"; };
+		7E22E000000000000000010A /* SpracheLiveAktivitaet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheLiveAktivitaet.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001C4 /* SpracheLiveAktivitaetKnoepfe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheLiveAktivitaetKnoepfe.swift; sourceTree = "<group>"; };
+		7E22E000000000000000010B /* UngelesenPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UngelesenPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718000001D0 /* MitteilungImVordergrund.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MitteilungImVordergrund.swift; sourceTree = "<group>"; };
+		7E22E000000000000000010C /* SpracheLiveAktivitaetProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpracheLiveAktivitaetProbe.swift; sourceTree = "<group>"; };
+		7E22E000000000000000010D /* UngelesenProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UngelesenProbe.swift; sourceTree = "<group>"; };
+		7E22E000000000000000010E /* Befehlskette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Befehlskette.swift; sourceTree = "<group>"; };
+		7E22E0000000000000000105 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7E22E0000000000000000106 /* WidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WidgetExtension.entitlements; sourceTree = "<group>"; };
+		7E22E000000000000000010F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7E11E0000000000000000023 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7E11E0000000000000000079 /* ShareExtension.appex in Embed Foundation Extensions */,
+				7E22E0000000000000000220 /* WidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		504EC3011FED79650016851F /* Frameworks */ = {
@@ -36,6 +206,27 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6071800000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E11E0000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E22E0000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -48,13 +239,30 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				A1B2C3D4E5F6071800000007 /* AppUITests */,
+				7E11E0000000000000000040 /* ShareExtension */,
+				7E11E0000000000000000041 /* Gemeinsam */,
+				7E22E0000000000000000040 /* WidgetExtension */,
+
 			);
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6071800000007 /* AppUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6071800000003 /* UITests.swift */,
+				7E11E000000000000000005A /* TeilenUITests.swift */,
+			);
+			path = AppUITests;
 			sourceTree = "<group>";
 		};
 		504EC3051FED79650016851F /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				A1B2C3D4E5F6071800000002 /* AppUITests.xctest */,
+				7E11E0000000000000000050 /* ShareExtension.appex */,
+				7E22E0000000000000000100 /* WidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,14 +272,106 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				A1B2C3D4E5F60718000000C8 /* AudioSessionPlugin.swift */,
+				A1B2C3D4E5F6071800000174 /* SprachePlugin.swift */,
+				A1B2C3D4E5F6071800000182 /* SpracheRaumZustand.swift */,
+				A1B2C3D4E5F60718000001D6 /* SpracheRaumDelegate.swift */,
+				A1B2C3D4E5F6071800000184 /* SpracheRaumTaub.swift */,
+				A1B2C3D4E5F60718000001A8 /* Wiedergabebegrenzer.swift */,
+				A1B2C3D4E5F60718000001AA /* WiedergabebegrenzerProbe.swift */,
+				A1B2C3D4E5F6071800000186 /* SpracheAnsicht.swift */,
+				A1B2C3D4E5F60718000001B1 /* SpracheBildImBild.swift */,
+				A1B2C3D4E5F60718000001B3 /* SpracheBildImBildInhalt.swift */,
+				A1B2C3D4E5F60718000001B5 /* SpracheBildImBildProbe.swift */,
+				A1B2C3D4E5F6071800000188 /* SpracheKachel.swift */,
+				A1B2C3D4E5F607180000018A /* SpracheSteuerleiste.swift */,
+				A1B2C3D4E5F607180000018C /* SpracheAnsichtHalter.swift */,
+				A1B2C3D4E5F60718000001A6 /* SpracheAnsichtProbe.swift */,
+				A1B2C3D4E5F607180000018E /* SprachePluginProbe.swift */,
+				A1B2C3D4E5F6071800000190 /* SpracheRaumSession.swift */,
+				A1B2C3D4E5F607180000019E /* AnrufProbe.swift */,
+				A1B2C3D4E5F60718000001A0 /* AnrufPush.swift */,
+				A1B2C3D4E5F60718000001A2 /* AnrufPushAusgang.swift */,
+				A1B2C3D4E5F60718000001A4 /* AnrufPushProbe.swift */,
+				A1B2C3D4E5F60718000001C2 /* AnrufPushProbe2.swift */,
+				A1B2C3D4E5F60718000001C0 /* BrueckeProbe.swift */,
+				A1B2C3D4E5F6071800000192 /* Anrufverwaltung.swift */,
+				A1B2C3D4E5F6071800000194 /* AnrufCallKit.swift */,
+				A1B2C3D4E5F6071800000196 /* AnrufSitzung.swift */,
+				A1B2C3D4E5F6071800000198 /* AnrufRaum.swift */,
+				A1B2C3D4E5F607180000019A /* AnrufPluginRaum.swift */,
+				A1B2C3D4E5F607180000019C /* SpracheRaumStumm.swift */,
+				A1B2C3D4E5F6071800000172 /* SpracheRaum.swift */,
+				A1B2C3D4E5F6071800000152 /* AudioSessionJetztLaeuft.swift */,
+				A1B2C3D4E5F6071800000142 /* AudioSessionAusgabe.swift */,
+				A1B2C3D4E5F60718000000D2 /* ReviewPlugin.swift */,
+				A1B2C3D4E5F60718000000E2 /* OrientationPlugin.swift */,
+				A1B2C3D4E5F60718000000F2 /* WachhaltenPlugin.swift */,
+				A1B2C3D4E5F6071800000102 /* QrScanPlugin.swift */,
+				A1B2C3D4E5F6071800000112 /* AnrufPlugin.swift */,
+				A1B2C3D4E5F6071800000122 /* SchnellwahlPlugin.swift */,
+				A1B2C3D4E5F6071800000132 /* SperrePlugin.swift */,
+				7E11E0000000000000000058 /* ShareReceiverPlugin.swift */,
+				7E11E0000000000000000059 /* ShareReceiverProbe.swift */,
+				7E22E000000000000000010E /* Befehlskette.swift */,
+				7E22E000000000000000010A /* SpracheLiveAktivitaet.swift */,
+				A1B2C3D4E5F60718000001C4 /* SpracheLiveAktivitaetKnoepfe.swift */,
+				7E22E000000000000000010C /* SpracheLiveAktivitaetProbe.swift */,
+				7E22E000000000000000010B /* UngelesenPlugin.swift */,
+				A1B2C3D4E5F60718000001D0 /* MitteilungImVordergrund.swift */,
+				7E22E000000000000000010D /* UngelesenProbe.swift */,
+				A1B2C3D4E5F60718293A4B5D /* PrivacyInfo.xcprivacy */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
+				A1B2C3D4E5F60718000000C6 /* pulse-push.caf */,
+				A1B2C3D4E5F60718000000C4 /* App.entitlements */,
+				A1B2C3D4E5F60718000000C2 /* GoogleService-Info.plist */,
+				A1B2C3D4E5F60718293A4B60 /* InfoPlist.strings */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		7E11E0000000000000000040 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				7E11E0000000000000000051 /* ShareViewController.swift */,
+				7E11E0000000000000000052 /* TeilenEinsammeln.swift */,
+				7E11E0000000000000000053 /* TeilenBild.swift */,
+				7E11E0000000000000000054 /* Info.plist */,
+				7E11E0000000000000000055 /* ShareExtension.entitlements */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		7E11E0000000000000000041 /* Gemeinsam */ = {
+			isa = PBXGroup;
+			children = (
+				7E11E0000000000000000056 /* AppGruppe.swift */,
+				7E11E0000000000000000057 /* TeilenAblage.swift */,
+				A1B2C3D4E5F60718000001D2 /* TeilenWettlauf.swift */,
+				7E22E0000000000000000107 /* SpracheAktivitaetDaten.swift */,
+				7E22E0000000000000000108 /* SpracheAktivitaetAbsichten.swift */,
+				7E22E0000000000000000109 /* UngelesenAblage.swift */,
+			);
+			path = Gemeinsam;
+			sourceTree = "<group>";
+		};
+		7E22E0000000000000000040 /* WidgetExtension */ = {
+			isa = PBXGroup;
+			children = (
+				7E22E0000000000000000101 /* PulseWidgets.swift */,
+				7E22E0000000000000000102 /* UngelesenWidget.swift */,
+				7E22E0000000000000000103 /* SpracheAktivitaetWidget.swift */,
+				7E22E0000000000000000104 /* SpracheAktivitaetTeile.swift */,
+				7E22E0000000000000000105 /* Info.plist */,
+				7E22E0000000000000000106 /* WidgetExtension.entitlements */,
+				7E22E000000000000000010F /* PrivacyInfo.xcprivacy */,
+			);
+			path = WidgetExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -84,20 +384,117 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				7E11E0000000000000000023 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7E11E0000000000000000031 /* PBXTargetDependency */,
+				7E22E0000000000000000031 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				A1B2C3D4E5F6071800000162 /* LiveKit */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A1B2C3D4E5F6071800000001 /* AppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F607180000000C /* Build configuration list for PBXNativeTarget "AppUITests" */;
+			buildPhases = (
+				A1B2C3D4E5F6071800000005 /* Sources */,
+				A1B2C3D4E5F6071800000006 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3D4E5F6071800000009 /* PBXTargetDependency */,
+			);
+			name = AppUITests;
+			productName = AppUITests;
+			productReference = A1B2C3D4E5F6071800000002 /* AppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		7E11E0000000000000000010 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E11E0000000000000000011 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				7E11E0000000000000000020 /* Sources */,
+				7E11E0000000000000000021 /* Frameworks */,
+				7E11E0000000000000000022 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShareExtension;
+			productName = ShareExtension;
+			productReference = 7E11E0000000000000000050 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		7E22E0000000000000000010 /* WidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E22E0000000000000000011 /* Build configuration list for PBXNativeTarget "WidgetExtension" */;
+			buildPhases = (
+				7E22E0000000000000000020 /* Sources */,
+				7E22E0000000000000000021 /* Frameworks */,
+				7E22E0000000000000000022 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WidgetExtension;
+			productName = WidgetExtension;
+			productReference = 7E22E0000000000000000100 /* WidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D4E5F6071800000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
+		};
+		7E11E0000000000000000030 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E11E0000000000000000010;
+			remoteInfo = ShareExtension;
+		};
+		7E22E0000000000000000030 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E22E0000000000000000010;
+			remoteInfo = WidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3D4E5F6071800000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = A1B2C3D4E5F6071800000008 /* PBXContainerItemProxy */;
+		};
+		7E11E0000000000000000031 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E11E0000000000000000010 /* ShareExtension */;
+			targetProxy = 7E11E0000000000000000030 /* PBXContainerItemProxy */;
+		};
+		7E22E0000000000000000031 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E22E0000000000000000010 /* WidgetExtension */;
+			targetProxy = 7E22E0000000000000000030 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		504EC2FC1FED79650016851F /* Project object */ = {
@@ -106,6 +503,16 @@
 				LastSwiftUpdateCheck = 0920;
 				LastUpgradeCheck = 0920;
 				TargetAttributes = {
+					7E11E0000000000000000010 = {
+						CreatedOnToolsVersion = 2600.0;
+					};
+					7E22E0000000000000000010 = {
+						CreatedOnToolsVersion = 2600.0;
+					};
+					A1B2C3D4E5F6071800000001 = {
+						TestTargetID = 504EC3031FED79650016851F;
+						CreatedOnToolsVersion = 2600.0;
+					};
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
@@ -120,16 +527,21 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				A1B2C3D4E5F6071800000161 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				A1B2C3D4E5F6071800000001 /* AppUITests */,
+				7E11E0000000000000000010 /* ShareExtension */,
+				7E22E0000000000000000010 /* WidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -142,9 +554,28 @@
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
+				A1B2C3D4E5F60718293A4B61 /* InfoPlist.strings in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
+				A1B2C3D4E5F60718000000C5 /* pulse-push.caf in Resources */,
+				A1B2C3D4E5F60718000000C1 /* GoogleService-Info.plist in Resources */,
+				A1B2C3D4E5F60718293A4B5C /* PrivacyInfo.xcprivacy in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E11E0000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E22E0000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E22E0000000000000000221 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -156,6 +587,97 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				A1B2C3D4E5F60718000000C7 /* AudioSessionPlugin.swift in Sources */,
+				A1B2C3D4E5F6071800000173 /* SprachePlugin.swift in Sources */,
+				A1B2C3D4E5F6071800000181 /* SpracheRaumZustand.swift in Sources */,
+				A1B2C3D4E5F60718000001D5 /* SpracheRaumDelegate.swift in Sources */,
+				A1B2C3D4E5F6071800000183 /* SpracheRaumTaub.swift in Sources */,
+				A1B2C3D4E5F60718000001A7 /* Wiedergabebegrenzer.swift in Sources */,
+				A1B2C3D4E5F60718000001A9 /* WiedergabebegrenzerProbe.swift in Sources */,
+				A1B2C3D4E5F6071800000185 /* SpracheAnsicht.swift in Sources */,
+				A1B2C3D4E5F60718000001B0 /* SpracheBildImBild.swift in Sources */,
+				A1B2C3D4E5F60718000001B2 /* SpracheBildImBildInhalt.swift in Sources */,
+				A1B2C3D4E5F60718000001B4 /* SpracheBildImBildProbe.swift in Sources */,
+				A1B2C3D4E5F6071800000187 /* SpracheKachel.swift in Sources */,
+				A1B2C3D4E5F6071800000189 /* SpracheSteuerleiste.swift in Sources */,
+				A1B2C3D4E5F607180000018B /* SpracheAnsichtHalter.swift in Sources */,
+				A1B2C3D4E5F60718000001A5 /* SpracheAnsichtProbe.swift in Sources */,
+				A1B2C3D4E5F607180000018D /* SprachePluginProbe.swift in Sources */,
+				A1B2C3D4E5F607180000018F /* SpracheRaumSession.swift in Sources */,
+				A1B2C3D4E5F607180000019D /* AnrufProbe.swift in Sources */,
+				A1B2C3D4E5F607180000019F /* AnrufPush.swift in Sources */,
+				A1B2C3D4E5F60718000001A1 /* AnrufPushAusgang.swift in Sources */,
+				A1B2C3D4E5F60718000001A3 /* AnrufPushProbe.swift in Sources */,
+				A1B2C3D4E5F60718000001C3 /* AnrufPushProbe2.swift in Sources */,
+				A1B2C3D4E5F60718000001C1 /* BrueckeProbe.swift in Sources */,
+				A1B2C3D4E5F6071800000191 /* Anrufverwaltung.swift in Sources */,
+				A1B2C3D4E5F6071800000193 /* AnrufCallKit.swift in Sources */,
+				A1B2C3D4E5F6071800000195 /* AnrufSitzung.swift in Sources */,
+				A1B2C3D4E5F6071800000197 /* AnrufRaum.swift in Sources */,
+				A1B2C3D4E5F6071800000199 /* AnrufPluginRaum.swift in Sources */,
+				A1B2C3D4E5F607180000019B /* SpracheRaumStumm.swift in Sources */,
+				A1B2C3D4E5F6071800000171 /* SpracheRaum.swift in Sources */,
+				A1B2C3D4E5F6071800000151 /* AudioSessionJetztLaeuft.swift in Sources */,
+				A1B2C3D4E5F6071800000141 /* AudioSessionAusgabe.swift in Sources */,
+				A1B2C3D4E5F60718000000D1 /* ReviewPlugin.swift in Sources */,
+				A1B2C3D4E5F60718000000E1 /* OrientationPlugin.swift in Sources */,
+				A1B2C3D4E5F60718000000F1 /* WachhaltenPlugin.swift in Sources */,
+				A1B2C3D4E5F6071800000101 /* QrScanPlugin.swift in Sources */,
+				A1B2C3D4E5F6071800000111 /* AnrufPlugin.swift in Sources */,
+				A1B2C3D4E5F6071800000121 /* SchnellwahlPlugin.swift in Sources */,
+				A1B2C3D4E5F6071800000131 /* SperrePlugin.swift in Sources */,
+				7E11E0000000000000000075 /* AppGruppe.swift in Sources */,
+				7E11E0000000000000000076 /* TeilenAblage.swift in Sources */,
+				A1B2C3D4E5F60718000001D3 /* TeilenWettlauf.swift in Sources */,
+				7E11E0000000000000000077 /* ShareReceiverPlugin.swift in Sources */,
+				7E11E0000000000000000078 /* ShareReceiverProbe.swift in Sources */,
+				7E22E0000000000000000210 /* SpracheAktivitaetDaten.swift in Sources */,
+				7E22E0000000000000000211 /* SpracheAktivitaetAbsichten.swift in Sources */,
+				7E22E0000000000000000212 /* UngelesenAblage.swift in Sources */,
+				7E22E0000000000000000213 /* SpracheLiveAktivitaet.swift in Sources */,
+				A1B2C3D4E5F60718000001C5 /* SpracheLiveAktivitaetKnoepfe.swift in Sources */,
+				7E22E0000000000000000214 /* UngelesenPlugin.swift in Sources */,
+				A1B2C3D4E5F60718000001D1 /* MitteilungImVordergrund.swift in Sources */,
+				7E22E0000000000000000215 /* SpracheLiveAktivitaetProbe.swift in Sources */,
+				7E22E0000000000000000216 /* UngelesenProbe.swift in Sources */,
+				7E22E0000000000000000217 /* Befehlskette.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6071800000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F6071800000004 /* UITests.swift in Sources */,
+				7E11E000000000000000007A /* TeilenUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E11E0000000000000000020 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E11E0000000000000000070 /* ShareViewController.swift in Sources */,
+				7E11E0000000000000000071 /* TeilenEinsammeln.swift in Sources */,
+				7E11E0000000000000000072 /* TeilenBild.swift in Sources */,
+				7E11E0000000000000000073 /* AppGruppe.swift in Sources */,
+				7E11E0000000000000000074 /* TeilenAblage.swift in Sources */,
+				A1B2C3D4E5F60718000001D4 /* TeilenWettlauf.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E22E0000000000000000020 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E22E0000000000000000200 /* PulseWidgets.swift in Sources */,
+				7E22E0000000000000000201 /* UngelesenWidget.swift in Sources */,
+				7E22E0000000000000000202 /* SpracheAktivitaetWidget.swift in Sources */,
+				7E22E0000000000000000203 /* SpracheAktivitaetTeile.swift in Sources */,
+				7E22E0000000000000000204 /* SpracheAktivitaetDaten.swift in Sources */,
+				7E22E0000000000000000205 /* SpracheAktivitaetAbsichten.swift in Sources */,
+				7E22E0000000000000000206 /* UngelesenAblage.swift in Sources */,
+				7E22E0000000000000000207 /* AppGruppe.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -230,7 +752,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -281,7 +803,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -298,7 +820,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -320,7 +845,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -328,6 +856,148 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A1B2C3D4E5F607180000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app.UITests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = App;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F607180000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app.UITests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = App;
+			};
+			name = Release;
+		};
+		7E11E0000000000000000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7E11E0000000000000000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7E22E0000000000000000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = WidgetExtension/WidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = WidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app.WidgetExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7E22E0000000000000000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = WidgetExtension/WidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = WidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.howispulse.app.WidgetExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -355,7 +1025,45 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A1B2C3D4E5F607180000000C /* Build configuration list for PBXNativeTarget "AppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F607180000000A /* Debug */,
+				A1B2C3D4E5F607180000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E11E0000000000000000011 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E11E0000000000000000012 /* Debug */,
+				7E11E0000000000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E22E0000000000000000011 /* Build configuration list for PBXNativeTarget "WidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E22E0000000000000000012 /* Debug */,
+				7E22E0000000000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A1B2C3D4E5F6071800000161 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.17.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCLocalSwiftPackageReference section */
 		D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */ = {
@@ -369,6 +1077,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
+		};
+		A1B2C3D4E5F6071800000162 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6071800000161 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

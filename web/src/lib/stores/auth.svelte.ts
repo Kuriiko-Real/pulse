@@ -1,5 +1,5 @@
 import { me } from '$lib/api/auth';
-import { isDefinitiveAuthError, currentAccessToken } from '$lib/api/client';
+import { isDefinitiveAuthError, currentAccessToken, sitzungTotRaeumen } from '$lib/api/client';
 import { clearTokens, loadTokens } from '$lib/api/storage';
 import { clearVoiceResume } from '$lib/voice/resume';
 import { browserSpeicher, gemerkteEinladungVerwerfen } from '$lib/einladung/gemerkt';
@@ -29,6 +29,7 @@ import { keypairStore } from '$lib/identity/keypair.svelte';
 import { idbIdentityLeeren } from '$lib/identity/idb-shared';
 import { clearLegacyStreamCredentials } from '$lib/stream/persistence';
 import { renewSession, cloudSitzungVergessen } from '$lib/api/cookie-client';
+import { badgeMeldungZuruecksetzen } from '$lib/platform/badgeMelden';
 
 const ACCESS_KEY = 'dcc.tokens.access';
 
@@ -167,7 +168,9 @@ class AuthStore {
         // die Browser-seitige `sub.unsubscribe()` (der eigentliche Schutz
         // für den nächsten Nutzer) läuft unabhängig davon.
         void import('$lib/notifications/pushSubscribe').then((m) => m.unsubscribeUser());
-        clearTokens();
+        // Tokens löschen — und FCM- und VoIP-Token mit dem vorher gesicherten
+        // Zugriffs-Token abmelden, solange es noch gilt (iOS-Bughunt 2, C2).
+        sitzungTotRaeumen();
         this.user = null;
       } else {
         // Transient (offline / Deploy-5xx), auch nach den Retries noch nicht
@@ -257,6 +260,9 @@ class AuthStore {
       void import('$lib/notifications/pushSubscribe').then((m) => m.unsubscribeUser());
       // FCM-Token ebenso (P0.1) — gleiche Erb-Baisse, gleiche Entsaftung.
       void import('$lib/platform/fcm').then((m) => m.abmeldeFcmToken());
+      void import('$lib/platform/voipToken').then((m) => m.voipTokenAbmelden());
+      void import('$lib/platform/schnellwahl').then((m) => m.schnellwahlLeeren());
+      badgeMeldungZuruecksetzen(); // Begründung in signOut()
       // Self-Host-Connections + Session-Tokens des Vorgängers schließen.
       for (const s of serversStore.servers) {
         if (s.isCloud) continue;
@@ -397,8 +403,30 @@ class AuthStore {
       (activeServer.current?.isCloud ?? true) ? (currentAccessToken() ?? undefined) : undefined;
     void import('$lib/notifications/pushSubscribe').then((m) => m.unsubscribeUser(pushBearer));
     // FCM-Token des Android-Geräts ebenso abmelden (P0.1) — sonst klingelt
-    // hier weiter die Post des Vorgängers. Best-effort wie oben.
-    void import('$lib/platform/fcm').then((m) => m.abmeldeFcmToken(pushBearer));
+    // hier weiter die Post des Vorgängers. Best-effort wie oben. FCM- und
+    // VoIP-Token liegen seit dem 2026-10-11 IMMER in der Cloud (Bughunt T2),
+    // also mit dem Cloud-Token, auch wenn gerade ein Self-Host aktiv ist.
+    const cloudBearer = currentAccessToken() ?? undefined;
+    void import('$lib/platform/geraetetokenAbmelden').then((m) =>
+      m.geraetetokenAbmelden(cloudBearer)
+    );
+    void import('$lib/platform/schnellwahl').then((m) => m.schnellwahlLeeren());
+    // **Gespräch und Sprachkanal gehören dem Abgemeldeten.** Bis zum
+    // 2026-10-11 räumte nur der Abmelde-Knopf im Fussbereich den Kanal ab —
+    // alle anderen Wege hierher (Handy-Menü, abgelaufene Sitzung, Konto
+    // gelöscht) liessen ihn stehen. Im Web-Weg fällt das kaum auf; auf iOS
+    // läuft der Raum aber NATIV weiter, mit offenem Mikrofon, und die
+    // Oberfläche kennt ihn nach dem Abmelden nicht mehr. Der Anruf legt mit
+    // dem gesicherten Token auf (die Gegenseite soll nicht warten),
+    // `spracheVerlassen` fasst einen nativen Kanal auch dann, wenn der
+    // Voice-Store ihn (noch) nicht übernommen hat. Ausserhalb von iOS ist
+    // das ein No-op.
+    void import('$lib/anrufe/anruf.svelte').then((m) => m.anrufe.abmelden(cloudBearer));
+    void import('$lib/voice/livekit.svelte').then(({ voice }) => voice.disconnect());
+    void import('$lib/platform/iosSprache').then((m) => m.spracheVerlassen().catch(() => {}));
+    // Drosselstand ist ein Modul-Singleton: ohne Rücksetzen meldete der nächste
+    // Nutzer seine ungeladene 0 und löschte SEINEN Serverzähler (badgeDrossel.ts).
+    badgeMeldungZuruecksetzen();
     clearTokens();
     // Das Cookie, dessen Prägezeit der Klient sich merkt, gehört dem Konto von
     // eben — der nächste Cookie-Request muss erst wieder erneuern.

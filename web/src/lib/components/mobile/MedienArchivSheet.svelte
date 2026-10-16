@@ -19,6 +19,7 @@
   import BottomSheet from './BottomSheet.svelte';
   import AutoRefreshImage from '$lib/components/AutoRefreshImage.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
+  import AnhangLadeknopf from '$lib/components/AnhangLadeknopf.svelte';
   import FileIcon from '@lucide/svelte/icons/file';
   import DownloadIcon from '@lucide/svelte/icons/download';
   import { m } from '$lib/paraglide/messages.js';
@@ -197,17 +198,15 @@
                 <span class="text-text-muted block text-2xs">{formatBytes(z.size)}</span>
               </span>
               {#if quelle}
-                <a
-                  href={quelle}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download={z.dateiname ?? 'anhang'}
+                <AnhangLadeknopf
+                  {quelle}
+                  dateiname={z.dateiname}
                   class="text-primary hover:bg-bg-hover flex size-8 items-center justify-center rounded-full"
                   aria-label={m.medien_datei_laden()}
                   data-testid={`media-archive-file-download-${z.id}`}
                 >
                   <DownloadIcon class="size-4" />
-                </a>
+                </AnhangLadeknopf>
               {/if}
             </li>
           {/each}

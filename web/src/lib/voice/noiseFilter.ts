@@ -1,10 +1,57 @@
 import type { Track, TrackProcessor, ProcessorOptions } from 'livekit-client';
-import { RnnoiseWorkletNode, NoiseGateWorkletNode, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
+// WICHTIG: die Wert-Importe dieser Bibliothek sind bewusst DYNAMISCH (unten,
+// `suppressorModul()`). Sie deklariert auf Modul-Ebene
+// `class NoiseGateWorkletNode extends AudioWorkletNode` — und `AudioWorkletNode`
+// existiert in WebKit NUR in Secure Contexts. Ein statischer Import wirft darum
+// auf jedem http-Origin (Dev-Stack übers LAN auf dem Gerät, plain-http-
+// Self-Host) schon beim App-Boot einen ReferenceError und lässt die Seite
+// komplett leer. Die `?url`-Importe bleiben statisch: Sie erzeugen nur
+// Zeichenketten und evaluieren die Bibliothek nicht.
+import type {
+  NoiseGateWorkletNode,
+  RnnoiseWorkletNode
+} from '@sapphi-red/web-noise-suppressor';
 import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
 import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 import noiseGateWorkletPath from '@sapphi-red/web-noise-suppressor/noiseGateWorklet.js?url';
 import type { NoiseSuppressionMode } from '$lib/stores/settings.svelte';
+
+type SuppressorModul = typeof import('@sapphi-red/web-noise-suppressor');
+let _suppressorModul: Promise<SuppressorModul> | null = null;
+
+/** Einmaliges, faules Laden der Noise-Suppressor-Bibliothek (s. Import-Kommentar).
+ *  Eine abgelehnte Ladung wird verworfen statt gecacht — sonst bliebe NS bis
+ *  zum Reload tot, wenn ein Web-Deploy den gehashten Chunk zwischenzeitlich
+ *  weggerissen hat (404 beim ersten Versuch). */
+function suppressorModul(): Promise<SuppressorModul> {
+  _suppressorModul ??= import('@sapphi-red/web-noise-suppressor').catch((e) => {
+    _suppressorModul = null;
+    throw e;
+  });
+  return _suppressorModul;
+}
+
+/**
+ * Die Bibliothek im Hintergrund vorladen, sobald dieses Modul geladen ist —
+ * aber nur in einem Secure Context (s. Import-Kommentar: anderswo würde sie
+ * beim Auswerten werfen).
+ *
+ * **Warum vorladen.** Bis zum faulen Import lag die Bibliothek im selben
+ * Chunk wie dieses Modul, war also da, sobald die App lief. Faul geladen kommt
+ * sie erst beim ersten Beitritt — und hat ein Web-Deploy den gehashten Chunk
+ * inzwischen ersetzt, antwortet der Server einer lange offenen App (typisch:
+ * ein Electron-Fenster, das tagelang läuft) mit 404, und der Nutzer spräche
+ * ohne Rauschunterdrückung. Vorgeladen gilt wieder, was vorher galt: der
+ * Chunk kommt mit dem Start. Ein Fehlschlag hier ist still — der Beitritt
+ * versucht es selbst noch einmal (`suppressorModul` cacht keine Ablehnung).
+ */
+function imHintergrundVorladen(): void {
+  if (typeof window === 'undefined' || !window.isSecureContext) return;
+  if (typeof AudioWorkletNode === 'undefined') return;
+  setTimeout(() => void suppressorModul().catch(() => {}), 0);
+}
+imHintergrundVorladen();
 
 /** Tracks AudioContext instances that have had the RNNoise + gate worklet
  *  modules registered, so restart() skips the addModule round-trips when
@@ -75,6 +122,8 @@ class RnnoiseGatedTrackProcessor implements TrackProcessor<Track.Kind.Audio> {
   #tapRaf: number | null = null;
   #dest: MediaStreamAudioDestinationNode | null = null;
   #wasmBinary: ArrayBuffer | null = null;
+  /** Bibliotheks-Namensraum, beim ersten Graph-Aufbau geladen (s. Import-Kommentar). */
+  #suppressor: SuppressorModul | null = null;
   #openDb: number;
   #makeupGain: number;
 
@@ -150,7 +199,7 @@ class RnnoiseGatedTrackProcessor implements TrackProcessor<Track.Kind.Audio> {
   };
 
   #makeGate(ctx: AudioContext): NoiseGateWorkletNode {
-    return new NoiseGateWorkletNode(ctx, {
+    return new (this.#suppressor!.NoiseGateWorkletNode)(ctx, {
       openThreshold: this.#openDb,
       closeThreshold: this.#openDb - GATE_CLOSE_BELOW_OPEN_DB,
       holdMs: GATE_HOLD_MS,
@@ -163,6 +212,8 @@ class RnnoiseGatedTrackProcessor implements TrackProcessor<Track.Kind.Audio> {
     const ctx = audioContext ?? new AudioContext({ sampleRate: 48000 });
     this.#ctx = ctx;
 
+    if (!this.#suppressor) this.#suppressor = await suppressorModul();
+    const { RnnoiseWorkletNode, loadRnnoise } = this.#suppressor;
     if (!this.#wasmBinary) {
       this.#wasmBinary = await loadRnnoise({ url: rnnoiseWasmPath, simdUrl: rnnoiseSimdWasmPath });
     }

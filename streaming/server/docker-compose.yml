@@ -72,6 +72,14 @@ services:
       # 1:1 mit infra/prod/docker-compose.yml uebereinstimmen; Begruendung dort
       # und im Kopf des Patches.
       PULSE_KEYFRAME_ON_DISCARD: "1"
+      # Vollbild, sobald ein Zuschauer BEITRITT (Patch 0010). Ohne das
+      # fragt nur, wer von sich aus fragt — Chromium tut es, WebKit nicht,
+      # und ein iOS-Zuschauer sitzt bis zu 60 s vor Schwarz. Begruendung
+      # samt Messung im Dockerfile-Kopf des Forks.
+      # OFFEN (Rebase-Probe 2026-10-16): erst mit dem Bild, das 0010 traegt,
+      # und dann an allen fuenf Stellen zugleich einschalten
+      # (infra/self-host/tests/test_mediamtx_fork.py, nativeBackend.test.ts).
+      # PULSE_KEYFRAME_ON_JOIN: "1"
       PULSE_VIDEO_REORDER_BUFFER: "128"
       # Patch 0008 (2026-10-14), wirksam ab Bild `1.19.1-pulse8`; ebenso 1:1
       # mit infra/prod/docker-compose.yml, Begruendung dort.

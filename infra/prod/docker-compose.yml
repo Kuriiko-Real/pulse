@@ -470,6 +470,22 @@ services:
       # naechsten regulaeren Vollbild — belegt an fuenf Verwerfungen mit
       # Zuschauern und null Anforderungen am Sender.
       PULSE_KEYFRAME_ON_DISCARD: "1"
+      # Patch 0010 (2026-10-08, auf feat/ios als 0008 entstanden), wirksam erst
+      # mit einem Bild, das ihn traegt (noch nicht gebaut). Begruendung
+      # samt Messung im Dockerfile-Kopf des Forks.
+      #
+      # Tritt ein Zuschauer bei, fordert MediaMTX beim Sender ein Vollbild an.
+      # Vorher fragte nur, wer von sich aus fragt: Chromium tut es, WebKit
+      # (Safari, alles unter iOS) nicht — ein iPhone-Zuschauer ohne Chromium im
+      # Raum sass bei 60 s Vollbild-Abstand bis zu einer Minute vor Schwarz.
+      # Bis zum 2026-10-11 stand der Schalter nur in Dev, macOS und auf dem
+      # Hetzner-Stack; hier lief das Bild mit dem Patch wirkungslos
+      # (iOS-Bughunt 2, E1). Ein unbekannter Schalter waere auf jedem aelteren
+      # Bild folgenlos — er wartet also auf nichts.
+      # OFFEN (Rebase-Probe 2026-10-16): erst mit dem Bild, das 0010 traegt,
+      # und dann an allen fuenf Stellen zugleich einschalten
+      # (infra/self-host/tests/test_mediamtx_fork.py, nativeBackend.test.ts).
+      # PULSE_KEYFRAME_ON_JOIN: "1"
       # Umordnungsfenster fuer BILDspuren, in Paketen (Vorgabe 64 = ~150 ms
       # bei 4 Mbit/s, knapp UNTER der ersten NACK-Nachlieferung von ~160 ms).
       # 128 gibt der Nachlieferung eine zweite Runde und haelt einen echten

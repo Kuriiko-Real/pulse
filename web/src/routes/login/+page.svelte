@@ -23,6 +23,7 @@
   import { startProfileRefresh } from '$lib/identity/profile-refresh.svelte';
   import AuthBuehne from '$lib/components/AuthBuehne.svelte';
   import { isElectron } from '$lib/platform/runtime';
+  import { vonAussenOeffnen } from '$lib/navigation/navigationsHerkunft';
 
   type Step = 'credentials' | 'mfa';
 
@@ -96,7 +97,16 @@
     // mehr, das ein Account-Wechsel am selben Gerät verwechseln könnte.
     if (auth.isAuthenticated) void startProfileRefresh();
 
-    await goto(safeRedirect(page.url.searchParams.get('redirect')));
+    await zumZiel();
+  }
+
+  /** Nach der Anmeldung weiter. **Ein `redirect` kommt von aussen** — kein
+   *  Teil der App baut ihn —, und landet deshalb auch so: ein Link auf einen
+   *  Sprachkanal öffnet die Seite, ohne beizutreten (S1, D1,
+   *  `navigation/herkunft.ts`). */
+  function zumZiel(): Promise<void> {
+    const ziel = page.url.searchParams.get('redirect');
+    return ziel ? vonAussenOeffnen(safeRedirect(ziel)) : goto('/app');
   }
 
   async function submit(e: Event) {
@@ -254,10 +264,19 @@
           >
             {m.login_label_identifier()}
           </FieldLabel>
+          <!-- autocapitalize/autocorrect/spellcheck aus: iOS schreibt sonst den
+               ersten Buchstaben gross (aus "dev" wird "Dev") und unterringelt
+               den Namen. Die Anmeldung selbst vertraegt das seit dem
+               2026-09-21 (`func.lower(User.username)`, auth routes.py), es
+               sieht nur falsch aus — und bei der E-Mail-Variante waere eine
+               Autokorrektur echter Schaden. -->
           <Input
             id="login-identifier"
             type="text"
             autocomplete="username"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck={false}
             bind:value={emailOrUsername}
             required
             data-testid="login-identifier"

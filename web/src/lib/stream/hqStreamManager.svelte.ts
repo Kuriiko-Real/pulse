@@ -23,6 +23,9 @@ import { errText } from '$lib/utils/errText';
  * Ton vom Video-Element entkoppelt und läuft beim Wegnavigieren weiter.
  */
 import { connectWhep, WhepError, type WhepSession } from './whep';
+import { tonWiedergabe } from '$lib/platform/iosTon';
+import { iosFernbefehle } from '$lib/platform/iosAudioSession';
+import { userCache } from '$lib/stores/users.svelte';
 import { DiagnoseSammler } from './diagnose-bericht';
 import { sendeDiagnoseBericht } from './diagnose-senden';
 import { WhepStatsReader, type StreamStats } from './whep-stats';
@@ -34,6 +37,8 @@ import { chatApi } from '$lib/api/chat';
 import { isPlayerAvailable } from '$lib/player/client';
 import { settings } from '$lib/stores/settings.svelte';
 import { applySinkId } from '$lib/audio/applySinkId';
+import { spieleAb, spieltBinnen } from '$lib/audio/abspielen';
+import { isIosWebKit } from '$lib/platform/runtime';
 import { m } from '$lib/paraglide/messages.js';
 
 // Retry-Backoff: Publisher evtl. noch nicht online (404) oder transienter
@@ -135,10 +140,16 @@ export class ManagedHqStream {
   // erst beim nächsten `hqStreams.setOutputDevice()`-Aufruf.
   #outputDeviceId = settings.audio.outputDeviceId;
 
+  /** Stabile Kennung dieser Kachel fuer den Ton-Koordinator — dieselbe Form
+   *  wie der Registry-Schluessel unten, damit zwei Kacheln sich nie
+   *  gegenseitig abmelden. */
+  readonly #tonKennung: string;
+
   constructor(channelId: string, userId: string, slot = 0) {
     this.channelId = channelId;
     this.userId = userId;
     this.slot = slot;
+    this.#tonKennung = `hq:${channelId}:${userId}:${slot}`;
     const v = getStreamVolume(userId);
     this.volume = v;
     this.#prevVolume = v > 0 ? v : 100;
@@ -291,14 +302,40 @@ export class ManagedHqStream {
     this.setVolume(next);
   }
 
+  /**
+   * „Ton aktivieren" auf der Kachel.
+   *
+   * **Beide Startversuche werden noch in der Klick-Aufgabe abgesetzt.** WebKit
+   * verwirft die Nutzeraktivierung ueber ein `await` hinweg, und sie gilt fuer
+   * `AudioContext.resume()` genauso wie fuer `<audio>.play()`. Die vorige
+   * Fassung wartete erst auf den Kontext und spielte das Element danach: im
+   * Haupt-Zweig (Web-Audio-Graph) fiel das nicht auf, weil `#audioEl` dort gar
+   * nicht existiert — im RUECKFALL-Zweig aber, und dort ist das Element der
+   * einzige hoerbare Weg. Gleiche Fehlerklasse wie in
+   * `components/ScreenShareTile.svelte` und `voice/livekit.svelte.ts`.
+   */
   async enableAudio(): Promise<void> {
-    try {
-      await this.#boost.resume();
-      await this.#audioEl?.play();
-      this.audioBlocked = this.#boost.suspended;
-    } catch {
-      /* still blocked */
+    if (!isIosWebKit()) {
+      // Desktop und Android: unverändert wie vor der iOS-Arbeit.
+      try {
+        await this.#boost.resume();
+        await this.#audioEl?.play();
+        this.audioBlocked = this.#boost.suspended;
+      } catch {
+        /* still blocked */
+      }
+      return;
     }
+    const kontext = this.#boost.resume().catch(() => undefined);
+    // Ein Abbruch ist keine Sperre, und ein hängendes `play()` hält den Knopf
+    // nicht fest (`spieltBinnen`).
+    const audioEl = this.#audioEl;
+    const element = spieltBinnen(audioEl ? spieleAb(audioEl) : Promise.resolve());
+    await kontext;
+    const elementSpielt = await element;
+    // Welcher Weg hoerbar ist, entscheidet, woran die Sperre haengt: mit
+    // Graph der Kontext, ohne ihn das Element (s. `#bindStream`).
+    this.audioBlocked = this.#audioEl ? !elementSpielt : this.#boost.suspended;
   }
 
   #applyVolume(): void {
@@ -348,6 +385,15 @@ export class ManagedHqStream {
     // `this.stream` zeigte auf einen Strom, den es nicht mehr gibt.
     if (this.#abgebrochen()) return;
     this.stream = stream;
+    // iOS: ab jetzt will diese Kachel Ton. Der Koordinator entscheidet, welche
+    // Audio-Betriebsart daraus folgt — ein Sprachkanal gewinnt (s.
+    // `platform/tonModus.ts`). Mehrfaches Anmelden derselben Kachel beim
+    // Wiederaufbau zaehlt einmal; No-op ausserhalb der iOS-Huelle.
+    // Titel fuer Sperrbildschirm/Kontrollzentrum. Der Name kann fehlen (Cache
+    // noch nicht gefuellt) — dann bleibt es bei der Vorgabe im Plugin.
+    const sender = userCache.get(this.userId);
+    const wer = sender?.display_name || sender?.username || '';
+    tonWiedergabe(this.#tonKennung, true, wer ? `Übertragung von ${wer}` : undefined);
     // Audio bevorzugt über den Web-Audio-Graphen (boost) — läuft unabhängig vom
     // Video-Element weiter. Greift der nicht, Fallback auf ein verstecktes,
     // ungemutetes <audio>-Element (auch dauerhaft, ohne Video).
@@ -358,7 +404,14 @@ export class ManagedHqStream {
       const el = this.#ensureAudioEl();
       el.srcObject = stream;
       el.muted = false;
-      void el.play().catch(() => {});
+      void spieleAb(el).catch(() => {
+        // Ohne Web-Audio-Graph IST dieses Element der hoerbare Weg, und eine
+        // abgelehnte Wiedergabe muss auf iOS sichtbar werden. Vorher stand hier
+        // ein leeres `catch`: auf WebKit blieb die Kachel damit stumm, ohne
+        // Knopf und ohne Hinweis. Ein Abbruch ist keine Ablehnung
+        // (`spieleAb`); Desktop und Android bleiben bei best effort.
+        if (isIosWebKit()) this.audioBlocked = true;
+      });
     }
     if (this.#videoEl) {
       this.#videoEl.srcObject = stream;
@@ -669,6 +722,9 @@ export class ManagedHqStream {
     void this.#teardown();
     this.#boost.dispose();
     this.#removeAudioEl();
+    // Abmelden, BEVOR `stream` faellt: faellt die letzte Wiedergabe weg und
+    // laeuft kein Sprachkanal, gibt der Koordinator die Audio-Session frei.
+    tonWiedergabe(this.#tonKennung, false);
     this.stream = null;
   }
 }
@@ -676,6 +732,27 @@ export class ManagedHqStream {
 // ---- Registry -------------------------------------------------------------
 
 const registry = new Map<string, ManagedHqStream>();
+
+/**
+ * Knoepfe vom Sperrbildschirm (Roadmap 25). Einmal verdrahtet, No-op ausser
+ * in der iOS-Huelle.
+ *
+ * **Was „Pause" hier heisst, ist eine Entscheidung** (Begruendung im Plugin):
+ * einen Live-Strom kann man nicht anhalten, und ihn vom Sperrbildschirm aus
+ * zu BEENDEN waere zu grob — ein Fehlgriff risse die Uebertragung weg. Pause
+ * bedeutet deshalb stumm, und zwar fuer alle offenen Kacheln; Wiedergabe
+ * wieder laut.
+ *
+ * `toggleMute` statt `setVolume(0)`: es merkt sich die vorige Lautstaerke,
+ * und genau die soll beim Aufdrehen zurueckkommen.
+ */
+iosFernbefehle((befehl) => {
+  for (const m of registry.values()) {
+    const stumm = m.volume === 0;
+    if (befehl === 'stumm' && !stumm) m.toggleMute();
+    if (befehl === 'laut' && stumm) m.toggleMute();
+  }
+});
 const keyOf = (channelId: string, userId: string, slot: number) =>
   `${channelId}:${userId}:${slot}`;
 

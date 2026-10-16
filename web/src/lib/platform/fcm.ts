@@ -16,9 +16,23 @@
  *    in den Chat (`channel_id` aus der Push-Nutzlast, inhaltsfrei).
  */
 
-import { goto } from '$app/navigation';
+import { vonAussenOeffnen } from '$lib/navigation/navigationsHerkunft';
 import { request } from '$lib/api/client';
-import { isCapacitorAndroid } from './runtime';
+import { serversStore } from '$lib/api/servers.svelte';
+import { drafts } from '$lib/stores/drafts.svelte';
+import { guilds } from '$lib/stores/guilds.svelte';
+import { bannerAntworten } from './bannerAntwort.svelte';
+import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
+import { badgeNachziehen } from './badge';
+import { berechtigungsblatt } from './berechtigung.svelte';
+import {
+  mitteilungenBeimStartFragen,
+  mitteilungenNachAnlassFragen,
+  type Huelle,
+  type Stand
+} from './berechtigungRegel';
+import { pushGeraetId } from './geraeteKennungPush';
+import { mitteilungsZiel } from './mitteilungsZiel';
 
 /** Schmaler Ausschnitt der Plugin-Oberfläche (nur was wir rufen). */
 interface FcmPlugin {
@@ -33,7 +47,13 @@ interface FcmPlugin {
   }): Promise<void>;
   addListener(
     eventName: 'notificationActionPerformed',
-    listenerFunc: (event: { notification: { data?: unknown } }) => void
+    listenerFunc: (event: {
+      notification: { data?: unknown };
+      /** Bezeichner der getippten Aktion; `tap` = auf die Meldung selbst. */
+      actionId?: string;
+      /** Text aus dem Antwort-Feld der Meldung (nur bei `antworten`). */
+      inputValue?: string;
+    }) => void
   ): Promise<{ remove: () => void }>;
 }
 
@@ -50,38 +70,78 @@ function plugin(): FcmPlugin | null {
  */
 const KANAL_ID = 'messages';
 
-const GERAET_KEY = 'pulse-fcm-geraet-id';
-
-function geraetId(): string {
-  try {
-    let id = window.localStorage.getItem(GERAET_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      window.localStorage.setItem(GERAET_KEY, id);
-    }
-    return id;
-  } catch {
-    return 'geraet-ohne-speicher';
-  }
+/**
+ * **An die CLOUD, nicht an den aktiven Server.** Pushes verschickt nur sie —
+ * sie gelten DMs (`fcm.py::fan_out_fcm_dm_push`), und DMs sind Cloud-only.
+ * Mit einem Self-Host davor landete der Token bis zum 2026-10-11 dort, und
+ * die Cloud kannte ihn nie (dieselbe Klasse wie VoIP-Token und Badge,
+ * Bughunt T2).
+ */
+function cloud(): { serverId?: string } {
+  return { serverId: serversStore.cloudId() };
 }
 
 async function meldeAn(fcm: FcmPlugin): Promise<void> {
   const { token } = await fcm.getToken();
-  await request<void>('/fcm/token', {
-    method: 'POST',
-    body: { token, geraet_id: geraetId() }
-  });
+  await request<void>(
+    '/fcm/token',
+    { method: 'POST', body: { token, geraet_id: pushGeraetId() } },
+    cloud()
+  );
 }
 
-/** Push-Tap → Deep-Link in den DM-Chat (Kanal ohne Guild → `/app/@me`). */
-function zeigAn(event: { notification: { data?: unknown } }): void {
-  const data = event.notification?.data;
-  const kanalId =
-    typeof data === 'object' && data !== null && 'channel_id' in data
-      ? String((data as Record<string, unknown>).channel_id)
-      : '';
-  if (!kanalId) return;
-  void goto(`/app/@me/${kanalId}`);
+/**
+ * Push-Tap → Deep-Link in den Chat (DM und private Gruppe unter `/app/@me`,
+ * ein Gilden-Kanal auf seiner Kanal-Route — `mitteilungsZiel.ts`).
+ *
+ * Die Aktion „Antworten" bringt den im Banner getippten Text mit. Er wird
+ * nicht HIER gesendet — Senden heisst bei einer verschlüsselten DM, eine
+ * Sitzung aufzubauen und den Umschlag zu bauen, und das gehört in den Chat,
+ * der gerade aufgeht. Dort wird er gesendet, sobald die Seite den Kanal kennt
+ * (`bannerAntwort.svelte.ts`, Bughunt 2026-10-11, T10: bis dahin landete er
+ * nur als Entwurf, obwohl der Knopf „Senden" heisst).
+ */
+function zeigAn(event: {
+  notification: { data?: unknown };
+  actionId?: string;
+  inputValue?: string;
+}): void {
+  // Ziel nach Kanalart (iOS-Bughunt 2, C4) — Regel in `mitteilungsZiel.ts`.
+  const ziel = mitteilungsZiel(event.notification?.data, gildeVonKanal);
+  if (!ziel) return;
+  const text = event.actionId === 'antworten' ? (event.inputValue ?? '').trim() : '';
+  if (text) {
+    // Gesendet wird nur auf der DM-Seite; in einem Gilden-Kanal wartet die
+    // Antwort als Entwurf im Eingabefeld, statt unbemerkt liegen zu bleiben.
+    if (ziel.antwortWirdGesendet) bannerAntworten.ablegen(ziel.kanalId, text);
+    else drafts.einsetzen(ziel.kanalId, text);
+  }
+  void vonAussenOeffnen(ziel.pfad);
+}
+
+/** In welcher Gilde liegt dieser Kanal? `null`, wenn der Klient es nicht weiss. */
+function gildeVonKanal(kanalId: string): string | null {
+  for (const [gilde, kanaele] of Object.entries(guilds.channelsByGuild)) {
+    if (kanaele.some((k) => k.id === kanalId)) return gilde;
+  }
+  return null;
+}
+
+/** Die Anmeldung samt Tipp-Hörer, sobald `installiereFcmPush` lief — für die
+ *  Stellen, an denen die Erlaubnis gerade erst erteilt wurde. */
+let anmeldenNachErlaubnis: (() => void) | null = null;
+
+/**
+ * Den Token unter der Anmelde-Kette melden, die das Gerät JETZT trägt — nach
+ * einem Passwortwechsel zu rufen (Nachtrag zu iOS-Bughunt 2, C2). Der Wechsel
+ * gibt diesem Gerät eine neue Kette und löscht die alte am Server; bis zur
+ * nächsten Rückkehr in den Vordergrund hinge die Zeile an der alten, und der
+ * Abgleich des chat-gateway (`geraetetoken_abgleich.py`) löschte sie als
+ * beendet — ein Gerät, das angemeldet bleibt, bekäme keine Banner mehr.
+ * Gegenstück zu `voipTokenNachmelden` (S3). Ohne Hülle ein No-op.
+ */
+export function fcmTokenNachmelden(): void {
+  anmeldenNachErlaubnis?.();
 }
 
 /**
@@ -93,7 +153,10 @@ function zeigAn(event: { notification: { data?: unknown } }): void {
  * App-Start den Token nachreicht.
  */
 export function installiereFcmPush(): void {
-  if (!isCapacitorAndroid()) return;
+  // iOS-Hülle nutzt dieselbe Plugin-Schnittstelle und denselben
+  // /fcm/token-Endpunkt — der Server-Versand unterscheidet nur am Token
+  // (APNs braucht den Auth-Key im Firebase-Projekt, seit 2026-10-06 drin).
+  if (!isCapacitorAndroid() && !isCapacitorIOS()) return;
   const fcm = plugin();
   if (!fcm) return;
 
@@ -103,14 +166,23 @@ export function installiereFcmPush(): void {
   const meldeBestEffort = (): void => {
     anmeldung ??= (async () => {
       try {
-        await fcm.createChannel({
-          id: KANAL_ID,
-          name: 'Nachrichten',
-          importance: 4, // HIGH — Pop-up + Ton, Discord-artig
-          visibility: 1 // PUBLIC — auf dem Sperrbildschirm lesbar
-        });
+        if (isCapacitorAndroid()) {
+          await fcm.createChannel({
+            id: KANAL_ID,
+            name: 'Nachrichten',
+            importance: 4, // HIGH — Pop-up + Ton, Discord-artig
+            visibility: 1 // PUBLIC — auf dem Sperrbildschirm lesbar
+          });
+        }
+        // **Auf iOS wird hier NICHT nach der Erlaubnis gefragt** (2026-10-08,
+        // iOS-Punkt 36). Diese Stelle läuft beim Start, also bevor der Nutzer
+        // die App gesehen hat — und der iOS-Dialog erscheint genau EINMAL.
+        // Ein „nein" aus Reflex war damit dauerhaft. Gefragt wird dort mit
+        // Vorerklärung und erst nach einem Anlass, s. `mitteilungenAnfragen`.
+        // **Android fragt weiter hier, beim Start** — wie vor der iOS-Hülle
+        // (Eigentümer-Entscheid 2026-10-16, `berechtigungRegel.ts`).
         let perms = await fcm.checkPermissions();
-        if (perms.receive !== 'granted') {
+        if (perms.receive !== 'granted' && mitteilungenBeimStartFragen(huelle())) {
           perms = await fcm.requestPermissions();
         }
         if (perms.receive !== 'granted') return;
@@ -127,11 +199,106 @@ export function installiereFcmPush(): void {
     })();
   };
 
+  anmeldenNachErlaubnis = meldeBestEffort;
   meldeBestEffort();
   // Nach Login/Resume: Token nachmelden, ohne den Listener doppelt zu hängen.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') meldeBestEffort();
   });
+}
+
+function huelle(): Huelle {
+  if (isCapacitorIOS()) return 'ios';
+  return isCapacitorAndroid() ? 'android' : null;
+}
+
+/** Plugin-Auskunft in unseren Stand übersetzt (`berechtigungRegel.ts`).
+ *  `prompt` heisst „noch offen" — nur dort kann ein Dialog noch etwas
+ *  ändern. */
+function alsStand(receive: 'granted' | 'denied' | 'prompt'): Stand {
+  switch (receive) {
+    case 'granted':
+      return 'erteilt';
+    case 'denied':
+      return 'verweigert';
+    default:
+      return 'offen';
+  }
+}
+
+/**
+ * Nach der Mitteilungs-Erlaubnis fragen — mit Vorerklärung und erst nach einem
+ * Anlass (iOS-Liste Punkt 36).
+ *
+ * Gerufen wird das nach einer gesendeten Nachricht, nicht beim Start. Grund:
+ * der iOS-Dialog erscheint GENAU EINMAL, und beim Start hat der Nutzer keinen
+ * Grund, ja zu sagen. Die Regel (wie viele Nachrichten, wie lange ein
+ * „später" hält) steht in `berechtigungRegel.ts`.
+ *
+ * Mehrfache Aufrufe sind billig: liegt die Erlaubnis vor oder ist sie
+ * verweigert, kehrt die Funktion vor jeder Frage zurück; fehlt der Anlass oder
+ * wurde die Erklärung schon weggetippt, sagt die Regel „nicht", und
+ * `requestPermissions` wird gar nicht erreicht. Still bei jedem Fehler — eine
+ * Mitteilungs-Erlaubnis ist nichts, wofür man eine Fehlermeldung zeigt.
+ */
+export async function mitteilungenAnfragen(): Promise<void> {
+  // Nur iOS: Android fragt beim Start (`installiereFcmPush`), ein zweiter
+  // Anlauf nach dem Senden wäre dort neues Verhalten.
+  if (!mitteilungenNachAnlassFragen(huelle())) return;
+  const fcm = plugin();
+  if (!fcm) return;
+  try {
+    const { receive } = await fcm.checkPermissions();
+    const stand = alsStand(receive);
+    if (stand !== 'offen') return;
+    if (!(await berechtigungsblatt.fragen('mitteilungen', stand))) return;
+    const neu = await fcm.requestPermissions();
+    if (neu.receive !== 'granted') return;
+    await nachErteilterErlaubnis(fcm);
+  } catch {
+    /* Kein Firebase-Setup / keine Session / offline — bewusst still. */
+  }
+}
+
+async function nachErteilterErlaubnis(fcm: FcmPlugin): Promise<void> {
+  // Bis eben hat `badgeSetzen` nichts getan (es fragt nie selbst) — die
+  // Plakette jetzt nachziehen, nicht erst bei der nächsten Nachricht.
+  badgeNachziehen();
+  // Über die Anmeldung beim Start, damit auch der Tipp-Hörer hängt — der
+  // hing bisher erst nach dem nächsten Vordergrund.
+  if (anmeldenNachErlaubnis) anmeldenNachErlaubnis();
+  else await meldeAn(fcm);
+}
+
+/** Stand der Mitteilungs-Erlaubnis dieses Geräts; `null` ohne Plugin oder
+ *  bei einem Fehler. Für die Einstellungen (`HuelleMitteilungen.svelte`). */
+export async function mitteilungenStand(): Promise<Stand | null> {
+  const fcm = plugin();
+  if (!fcm) return null;
+  try {
+    return alsStand((await fcm.checkPermissions()).receive);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Aus den Einstellungen der App: direkt nach der Erlaubnis fragen
+ * (iOS-Bughunt 2, F3). **Ohne Vorerklärung** — wer in den Einstellungen auf
+ * „Erlauben" tippt, hat den Grund vor Augen, und ein „später" davor gäbe es
+ * hier nicht. Liefert den Stand danach; `null` ohne Plugin oder bei einem
+ * Fehler.
+ */
+export async function mitteilungenJetztErlauben(): Promise<Stand | null> {
+  const fcm = plugin();
+  if (!fcm) return null;
+  try {
+    const stand = alsStand((await fcm.requestPermissions()).receive);
+    if (stand === 'erteilt') await nachErteilterErlaubnis(fcm);
+    return stand;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -144,13 +311,17 @@ export async function abmeldeFcmToken(bearerOverride?: string): Promise<void> {
   if (!fcm) return;
   try {
     const { token } = await fcm.getToken();
-    await request<void>('/fcm/token', {
-      method: 'DELETE',
-      body: { token },
-      ...(bearerOverride
-        ? { auth: false, headers: { Authorization: `Bearer ${bearerOverride}` } }
-        : {})
-    });
+    await request<void>(
+      '/fcm/token',
+      {
+        method: 'DELETE',
+        body: { token },
+        ...(bearerOverride
+          ? { auth: false, headers: { Authorization: `Bearer ${bearerOverride}` } }
+          : {})
+      },
+      cloud()
+    );
   } catch {
     /* best-effort — Sign-Out darf daran nicht hängen */
   }

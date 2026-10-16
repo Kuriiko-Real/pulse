@@ -3,6 +3,7 @@
   import { dev } from '$app/environment';
   import { onMount, onDestroy } from 'svelte';
   import { istInAppZiel } from '$lib/notifications/pushZiel';
+  import { vonAussenOeffnen } from '$lib/navigation/navigationsHerkunft';
   import { auth } from '$lib/stores/auth.svelte';
   import { guilds } from '$lib/stores/guilds.svelte';
   import { serverGuilds } from '$lib/stores/serverGuilds.svelte';
@@ -12,6 +13,7 @@
   import { sweepDeletedServers } from '$lib/api/deleted-instance-sweep';
   import { activeServer } from '$lib/stores/active-server.svelte';
   import { directMessages } from '$lib/stores/directMessages.svelte';
+  import { userCache } from '$lib/stores/users.svelte';
   import { readState } from '$lib/stores/readState.svelte';
   import { capabilities } from '$lib/stores/capabilities.svelte';
   import { gateway } from '$lib/ws/connection';
@@ -21,8 +23,26 @@
   import { initActivityHeartbeat, disposeActivityHeartbeat } from '$lib/ws/activity';
   import { pendingComplaints } from '$lib/stores/pendingComplaints.svelte';
   import { viewport } from '$lib/stores/viewport.svelte';
-  import { voice, resumeVoiceIfPending } from '$lib/voice/livekit.svelte';
-  import { autoConnectIfConfigured } from '$lib/voice/autoconnect.svelte';
+  import { mode } from 'mode-watcher';
+  import { statusLeisteFolgtTheme } from '$lib/platform/statusLeiste';
+  import { installiereExterneLinks } from '$lib/platform/externeLinks';
+  import { installiereUniversalLinks } from '$lib/platform/universalLinks';
+  import { badgeNachziehen } from '$lib/platform/badge';
+  import { badgeMelden } from '$lib/platform/badgeMelden';
+  import { ungeleseneNachrichten } from '$lib/navigation/abzeichen.svelte';
+  import { voice } from '$lib/voice/livekit.svelte';
+  import { startBeitritteAusfuehren } from '$lib/voice/startBeitritte';
+  import { spracheRaumVorhalten } from '$lib/platform/spracheVorhalt';
+  import { netzwacheStarten } from '$lib/ws/netzwache';
+  import { schriftGroesseVerfolgen } from '$lib/platform/schriftGroesse';
+  import { voipTokenVerfolgen } from '$lib/platform/voipToken';
+  import { schnellwahlSetzen, schnellwahlVerfolgen } from '$lib/platform/schnellwahl';
+  import { tonHqFunkSetzen } from '$lib/platform/iosTon';
+  import { settings } from '$lib/stores/settings.svelte';
+  import { schnellwahlEintraege } from '$lib/platform/schnellwahlAuswahl';
+  import VerbindungsHinweis from '$lib/components/VerbindungsHinweis.svelte';
+  import AppSperre from '$lib/components/AppSperre.svelte';
+  import BerechtigungVorerklaerung from '$lib/components/BerechtigungVorerklaerung.svelte';
   import VoiceControlBar from '$lib/components/VoiceControlBar.svelte';
   import WatchPartyPickerDialog from '$lib/components/WatchPartyPickerDialog.svelte';
   import StreamPickerDialog from '$lib/components/StreamPickerDialog.svelte';
@@ -88,6 +108,19 @@
     });
   });
 
+  // Schnellwahl am App-Symbol: die drei letzten Gespräche (Punkt 44).
+  // Als Effekt, weil sich BEIDES bewegt — die Liste der Gespräche und die
+  // Namen aus dem Nutzer-Cache, der beim Start noch leer ist. Die Auswahl
+  // selbst steht geprüft in `platform/schnellwahlAuswahl.ts`; ohne Namen
+  // fällt ein Gespräch dort heraus, statt mit einer Zahl am Symbol zu landen.
+  $effect(() => {
+    const namen: Record<string, string | undefined> = {};
+    for (const dm of directMessages.list) {
+      namen[dm.other_user_id] = userCache.byId[dm.other_user_id]?.username;
+    }
+    void schnellwahlSetzen(schnellwahlEintraege(directMessages.list, namen));
+  });
+
   // Server-Snapshot-Loader. Läuft bei jeder Änderung von
   // serversStore.servers — neue Server (Add via AddServerDialog,
   // Anmeldung mit Einladung, etc.) bekommen ihre Community-Liste sofort
@@ -150,15 +183,17 @@
     // events build the channel URL from the ids. target_url comes from the
     // push payload — validated as a same-origin in-app path before goto()
     // (Security-Scan 2026-09-18, s. $lib/notifications/pushZiel.ts).
+    // `vonAussenOeffnen`: eine Mitteilung ist kein Tipp in der App — landet
+    // sie auf einem Sprachkanal, tritt die Route nicht bei (Bughunt 2, D1).
     if (targetUrl && istInAppZiel(targetUrl)) {
-      void goto(targetUrl);
+      void vonAussenOeffnen(targetUrl);
       return;
     }
     if (!channelId) return;
     const url = guildId
       ? `/app/guilds/${guildId}/channels/${channelId}`
       : `/app/@me/${channelId}`;
-    void goto(url);
+    void vonAussenOeffnen(url);
   }
 
   /** Listener cleanup handles for the click bridges. Both are registered in
@@ -169,11 +204,21 @@
   // Ablage-Festigung: läuft für die gesamte App-Sitzung und geht in
   // Abständen Rundgang, s. `hintergrundFestigung.ts`-Modulkopf.
   let _stoppeKanalFestigung: (() => void) | null = null;
+  // Externe-Links-Fang der Hülle (No-op außerhalb; s. externeLinks.ts).
+  let externeLinksAbriss: () => void = () => undefined;
+  // Universal Links: Chat-Adressen öffnen die App (No-op außerhalb der Hülle).
+  let tiefenlinkAbriss: () => void = () => undefined;
 
   onMount(async () => {
     viewport.init();
     // Android-Hülle: Zurück-Taste navigiert in der App hoch statt zu schließen.
     registriereZurueckTaste();
+    // Externe Links (_blank) in der Hülle ins System-Browser-Blatt lenken.
+    externeLinksAbriss = installiereExterneLinks();
+    tiefenlinkAbriss = installiereUniversalLinks();
+    // iOS: ein Sprachraum, der das Neuladen überlebt hat, ist ab jetzt
+    // geschützt, nicht erst ab seiner Übernahme (B4, `spracheVorhalt.ts`).
+    void spracheRaumVorhalten();
     await auth.hydrate();
     if (!auth.isAuthenticated) {
       await goto('/login', { replaceState: true });
@@ -254,12 +299,26 @@
     ]);
     hydrated = true;
 
-    // Voice-Resume: war der User vor einem Reload (manuelles F5 oder „Neu
-    // laden" nach einem Update) in einem Voice-Channel, jetzt — nach Auth +
-    // WS-Ready — automatisch zurückverbinden. Fire-and-forget; no-op, wenn
-    // kein Resume-Eintrag vorliegt. DANACH (sequenziell — Resume gewinnt):
-    // Auto-Connect in den fest gewählten Voice-Channel, falls konfiguriert.
-    void resumeVoiceIfPending().then(() => autoConnectIfConfigured());
+    // Voice-Resume, danach Auto-Connect — erst nach der App-Sperre und mit
+    // dem Abgleich der Hülle vorneweg; bis dahin wartet auch der Auto-Beitritt
+    // der Kanal-Route. Reihenfolge und Gründe: `voice/startBeitritte.ts`.
+    void startBeitritteAusfuehren();
+    // Netz zurück / App wieder vorn → Verbindungen sofort prüfen, statt auf
+    // die nächste Backoff-Stufe zu warten (bis 300 s). Begründung und die
+    // drei Anlässe: `ws/netzwache.ts`.
+    netzwacheStarten();
+    // Systemschriftgröße anwenden, falls die Hülle sie meldet (Punkt 38).
+    schriftGroesseVerfolgen();
+    // PushKit-Token anmelden, damit ein Anruf das Telefon erreicht, auch wenn
+    // keine WebSocket offen ist (Punkt 40).
+    voipTokenVerfolgen();
+    // Schnellwahl am App-Symbol: auf einen Tipp aus dem Symbol reagieren
+    // (Punkt 44). Die EINTRÄGE setzt der Effekt weiter oben.
+    schnellwahlVerfolgen();
+    // Hochqualitäts-Route über Bluetooth aus der Einstellung übernehmen —
+    // nicht erst beim Umlegen des Schalters, sonst gilt sie nach einem
+    // Neustart nicht (die Session wird beim Beitritt eingerichtet).
+    tonHqFunkSetzen(settings.audio.bluetoothHq);
 
     // Vom Betreiber gelöschte Self-Host-Server aus der lokalen Liste räumen
     // (öffentliche Suspend-Liste der Cloud, anonymer Abgleich). Fire-and-forget.
@@ -355,6 +414,8 @@
     pendingComplaints.stop();
     _stoppeKanalFestigung?.();
     _stoppeKanalFestigung = null;
+    externeLinksAbriss();
+    tiefenlinkAbriss();
     gateway.disconnect();
     voice.disconnect();
     if (typeof document !== 'undefined') document.title = 'Pulse';
@@ -374,11 +435,46 @@
   // need notification permission. Reactive: flips back when read.
   $effect(() => {
     if (typeof document === 'undefined') return;
-    const dmUnread = directMessages.list.some((dm) => readState.isUnread(dm.id));
-    const channelUnread = Object.values(guilds.channelsByGuild)
-      .flat()
-      .some((c) => c.type === 0 && readState.isUnread(c.id));
-    document.title = dmUnread || channelUnread ? '● Pulse' : 'Pulse';
+    // Titel-Punkt: „irgendwo wartet etwas" — hier zaehlen Community-Kanaele
+    // bewusst MIT, es ist eine Ja/Nein-Aussage ohne Zahl.
+    const irgendwasUngelesen =
+      directMessages.list.some((dm) => readState.isUnread(dm.id)) ||
+      Object.values(guilds.channelsByGuild)
+        .flat()
+        .some((c) => c.type === 0 && readState.isUnread(c.id));
+    document.title = irgendwasUngelesen ? '● Pulse' : 'Pulse';
+
+    // Icon-Badge: eine ZAHL, und zwar ungelesene NACHRICHTEN der privaten
+    // Gespraeche — dasselbe, was der Server im Push fortschreibt (Begruendung
+    // in `navigation/abzeichen.svelte.ts::ungeleseneNachrichten`). Zwei
+    // Empfaenger, beide nur aus der iOS-Huelle: das Geraet selbst und der
+    // Server, der die Zahl in den naechsten Push legt — ohne ihn stuende sie
+    // still, solange die App zu ist (eingefrorene JS-Engine). Ausserhalb der
+    // Huelle ein No-op (`badgeMelden.ts`).
+    // Ans Icon legt `badgeMelden` die Zahl erst, wenn sie etwas bedeutet —
+    // vorher räumte die ungeladene 0 die Plakette des letzten Pushs ab
+    // (iOS-Bughunt 2, C7, Begründung dort).
+    badgeMelden(ungeleseneNachrichten());
+  });
+
+  // Icon-Badge bei Resume auffrischen: die Mitteilungserlaubnis kann
+  // nachträglich erteilt worden sein (Simulator-Befund 2026-10-06 —
+  // setBadgeCount scheitert stumm ohne Erlaubnis). Eigener Effect, weil der
+  // Hörer die Zahl nicht braucht — `badgeNachziehen` kennt die zuletzt gewünschte.
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    const badgeBeiSichtbar = () => {
+      if (document.visibilityState === 'visible') badgeNachziehen();
+    };
+    document.addEventListener('visibilitychange', badgeBeiSichtbar);
+    return () => document.removeEventListener('visibilitychange', badgeBeiSichtbar);
+  });
+
+  // Native Leisten (StatusBar, iOS-Tastatur) tragen dieselbe Theme-Farbe wie
+  // die App — im Browser/Electron ein No-op (s. statusLeiste.ts). Feuert auch
+  // beim Systemwechsel unter theme=auto, weil `mode` reaktiv gelesen wird.
+  $effect(() => {
+    statusLeisteFolgtTheme(mode.current === 'dark');
   });
 
   // Die eine Regel, die entscheidet, wer auf welcher Bildschirmgroesse
@@ -481,7 +577,7 @@
     voiceWarVerbunden = verbunden;
   });
 
-  // Android-Hülle: Querformat nur mit ANGEDOCKTEM Stream. Ein Stream im
+  // Mobil-Hüllen (Android und iOS): Querformat nur mit ANGEDOCKTEM Stream. Ein Stream im
   // Popup-Eckfenster (Corner-Mode: man hat den Kanal verlassen) lockt
   // trotzdem auf Hochformat — quer ist nur fürs Stream-Vollbild auf dem
   // Kanal-Bildschirm gedacht. Bedingung = kanalQuerStream OHNE die
@@ -569,6 +665,18 @@
     </div>
   {/if}
 </div>
+
+<!-- Verbindungs-Hinweis: oben, nicht blockierend. Begründung samt der
+     Abweichung von „Deckblatt" in der Komponente. -->
+<!-- App-Sperre: deckend, liegt über allem. Rendert nichts, wenn die Sperre
+     aus ist oder sie schon aufgehoben wurde. -->
+<AppSperre />
+
+<VerbindungsHinweis />
+
+<!-- Vorerklärung vor einem System-Berechtigungs-Dialog. Store-getrieben,
+     rendert nichts, solange kein Blatt offen ist. -->
+<BerechtigungVorerklaerung />
 
 <!-- Globaler Watch-Party-Auswahl-Dialog (wenn ein User mehrere Partys hostet) -->
 <WatchPartyPickerDialog />

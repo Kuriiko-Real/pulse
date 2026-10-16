@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push: nötig für die Geräte-Token-Registrierung. „development" gilt
+	     für Debug-/Entwicklerbuilds; App-Store-/TestFlight-Builds schaltet
+	     die automatische Signierung beim Archivieren auf production um. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- Zeitkritische Mitteilungen: durchbrechen Fokus-Modi (Stumm schaltet
+	     nur den Ton aus). Vom Server gesetzt (`aps.interruption-level` in der Nutzlast — nicht als Kopf, s. `fcm.py`).
+	     Apples Zeitkritisch-Capability für das App-ID-Profil. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+	<!-- Universal Links: Chat-Adressen von howispulse.com oeffnen die App
+	     statt Safari. Die Gegenseite ist
+	     https://howispulse.com/.well-known/apple-app-site-association
+	     (liegt in web/static/, Inhaltstyp per nginx-Block). Beansprucht sind
+	     NUR Chat-Pfade (Eigentuemer-Entscheid 2026-10-08) — der Rest der
+	     Web-App bleibt im Browser erreichbar, etwa auf einem fremden Geraet.
+	     `applinks:` ohne Pfadangabe ist richtig: welche Pfade gelten, sagt
+	     die AASA-Datei, nicht das Entitlement. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:howispulse.com</string>
+	</array>
+	<!-- Gemeinsamer Container mit der Teilen-Erweiterung (Punkt 41) und der
+	     Widget-Erweiterung (Widget „Ungelesen", Punkt 45) — deshalb der
+	     allgemeine Name. Kennung auch in `Gemeinsam/AppGruppe.swift`,
+	     `ShareExtension/ShareExtension.entitlements` und
+	     `WidgetExtension/WidgetExtension.entitlements`. **Am Gerät braucht das
+	     die Fähigkeit „App Groups“ an der App-ID und ein neues Profil** —
+	     der Handgriff steht in docs/plans/ios-roadmap.md, Punkt 41 und 28/45. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.howispulse.app</string>
+	</array>
+</dict>
+</plist>

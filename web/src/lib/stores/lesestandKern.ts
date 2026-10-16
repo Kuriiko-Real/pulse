@@ -44,3 +44,73 @@ export function istGelesenBis(partnerStand: string | undefined, messageId: strin
 export function lesestandAnker(nachricht: { id: string; krypto_id?: string }): string {
   return kanonischeId(nachricht.id, nachricht.krypto_id);
 }
+
+/**
+ * Hat ein ANDERES Gerät weiter gelesen, als dieses Gerät weiss?
+ *
+ * Der Server ist bei `dm_lesestand` die geräteübergreifende Wahrheit. Wenn
+ * sein Stand über dem eigenen liegt, wurde in diesem Gespräch woanders
+ * gelesen — der lokale Ungelesen-ZÄHLER zählt dann Nachrichten, die längst
+ * gelesen sind, und er korrigiert sich von selbst NICHT: `isUnread` ist am
+ * frischen Start immer `false` (`latestByChannel` ist nur Sitzungsbestand),
+ * also bleibt der Zähler als einzige Quelle stehen — bis in die Zahl am
+ * App-Icon hinein.
+ *
+ * **Warum geräumt und nicht nachgerechnet wird.** Wie viele der gezählten
+ * Nachrichten unter dem fremden Stand liegen, weiss dieses Gerät nicht (die
+ * IDs der gezählten Nachrichten hält der Zähler nicht). Beide Richtungen
+ * sind also ungenau, aber ungleich teuer: Ein zu HOHER Stand bleibt stehen
+ * und ist für den Nutzer eine Plakette, die nie verschwindet — die sicherste
+ * Art, ein Badge nutzlos zu machen. Ein zu niedriger heilt sich mit der
+ * nächsten Nachricht (der Push-Zähler des Servers zieht ihn sofort wieder
+ * hoch, s. `badgezaehler.py`). Deshalb räumen.
+ *
+ * **Ohne eigenen Stand gilt NICHTS als belegt** (`false`), obwohl „der
+ * Server kennt einen Stand, ich nicht" wie Fremdlesen aussieht. Es ist der
+ * Normalfall nach jedem Neuladen: Dieses Gerät hat drei Nachrichten gezählt
+ * (Zähler liegt im Speicher), der Serverstand stammt aber vom Lesen LETZTER
+ * WOCHE und liegt unter den drei. Die Regel hätte sie beim Öffnen der App
+ * weggeräumt — und niemand hätte sie wieder hochgezählt, denn ihre Umschläge
+ * sind längst abgeholt. Belegt ist Fremdlesen nur durch einen Stand, der den
+ * eigenen ÜBERHOLT; dafür muss der eigene mitgeschrieben werden
+ * (`seedOwnLesestand` persistiert deshalb).
+ */
+export function serverStandUeberholt(
+  serverStand: string | undefined | null,
+  eigenerStand: string | undefined | null
+): boolean {
+  if (!serverStand || !eigenerStand) return false;
+  return compareSnowflakeId(serverStand, eigenerStand) > 0;
+}
+
+/**
+ * Gilt eine DM beim Start als gelesen, obwohl kein Lesestand sie trägt?
+ * Liefert die Kennung, bis zu der sie als gelesen gelten soll — oder `null`
+ * (dann entscheidet der gewöhnliche Vergleich in `isUnread`).
+ *
+ * **Zwei Fälle, beide Bughunt 2026-10-11, T13** (frische Installation zeigte
+ * jede ältere DM als ungelesen):
+ *
+ * 1. **Die letzte Nachricht ist die eigene.** Was man selbst geschrieben hat,
+ *    hat man gelesen — die Lesestand-Tabelle am Server kennt das nur, wenn
+ *    das schreibende Gerät es zusätzlich gemeldet hat.
+ * 2. **Es gibt überhaupt keinen Lesestand** — weder am Server (die Tabelle
+ *    `dm_lesestand` hat keine Rückfüllung für Gespräche von vor P0.2) noch
+ *    auf diesem Gerät. „Weiss ich nicht" wird als gelesen gewertet, nicht als
+ *    ungelesen: eine frische Installation zeigt sonst die ganze Geschichte
+ *    rot. **Das ist eine Abwägung, kein Befund** — eine wirklich ungelesene
+ *    alte Nachricht ohne jeden Lesestand bleibt so unmarkiert; was nach dem
+ *    Start ankommt, zählt wie immer.
+ */
+export function startGelesenBis(z: {
+  letzteNachricht: string | null | undefined;
+  letzterAutor: string | null | undefined;
+  ich: string | null | undefined;
+  serverStand: string | null | undefined;
+  lokalerStand: string | undefined;
+}): string | null {
+  if (!z.letzteNachricht) return null;
+  if (z.ich && z.letzterAutor === z.ich) return z.letzteNachricht;
+  if (!z.serverStand && !z.lokalerStand) return z.letzteNachricht;
+  return null;
+}

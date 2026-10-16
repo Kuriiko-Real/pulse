@@ -1,7 +1,9 @@
 """In-process per-user token-bucket rate limiting for the chat-gateway.
 
-This is intentionally minimal: each bucket is a sliding window keyed on
-(action, user_id) held in module-global state. It is *per process* — for a
+This is intentionally minimal: each bucket is a FIXED window keyed on
+(action, user_id) held in module-global state — it starts with the first call
+and resets once ``window_seconds`` have passed since then (``check`` below), not
+a sliding window. It is *per process* — for a
 multi-instance deployment behind Caddy this must be swapped for a Redis-backed
 limiter (same caveat as the auth-svc's `_check_rate`). Buckets are evicted
 lazily once their window has fully elapsed, so memory stays bounded by the
@@ -111,6 +113,13 @@ _RULES: dict[str, tuple[int, float]] = {
     # upsertet einmal je Gerät — ein Mensch braucht dafür keine zehn Anläufe
     # je Minute; das Band fängt nur durchgedrehte Clients.
     "fcm_token": (10, 60.0),
+    # Wie fcm_token: der App-Start meldet EINMAL an, nicht im Takt.
+    "voip_token": (10, 60.0),
+    # Ungelesen-Stand fürs Icon-Badge (POST /fcm/badge). Der Klient drosselt
+    # selbst, meldet aber bei jeder Änderung des Stands — in einem lebhaften
+    # Gespräch sind das mehrere Meldungen je Minute. 30/Minute: reichlich für
+    # einen Menschen, eng für ein Skript. Ein Aufruf ist ein Redis-SET.
+    "fcm_badge": (30, 60.0),
     # Anrufe anstoßen (Befund 03.10.): je Aufruf klingelt es an ALLE Geräte
     # aller Gruppenmitglieder — ohne Bremse hammerbar als Klingel-Spam an
     # ganze Gruppen. 5/Minute: ein Mensch ruft nicht im Minutentakt an.

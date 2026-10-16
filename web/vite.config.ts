@@ -159,6 +159,17 @@ export default defineConfig({
   },
   server: {
     port: WEB_PORT,
+    // VITE_HTTPS_CERT/KEY: lokales HTTPS (mkcert) für Gerätetests — ohne
+    // Secure Context fehlt crypto.subtle und die Krypto-Identität
+    // („keine Gerätekennung" beim Senden) streikt. Ohne die Variablen bleibt
+    // alles beim gewohnten HTTP-Dev.
+    https:
+      process.env.VITE_HTTPS_CERT && process.env.VITE_HTTPS_KEY
+        ? {
+            cert: readFileSync(process.env.VITE_HTTPS_CERT),
+            key: readFileSync(process.env.VITE_HTTPS_KEY)
+          }
+        : undefined,
     host: '127.0.0.1',
     headers: {
       // Dev-CSP (Security-Audit 2026-09-16): das frühere Meta-CSP in app.html
@@ -232,14 +243,17 @@ export default defineConfig({
       '/.well-known/pulse-server-info': apiProxy(CHAT_PORT),
       // Objektspeicher wie die Prod-nginx unter der eigenen Origin ausliefern
       // (Cloud: location /pulse-attachments/ → MinIO; Self-Host: Caddy).
-      // dev-up setzt S3_PUBLIC_ENDPOINT des chat-gateway auf diesen Dev-
-      // Server, Browser-URLs sind damit SAME-ORIGIN — Garages lückenhafte
-      // CORS-Header (auf Fehlerantworten wie dem 404 einer noch nicht
-      // existierenden Dateiliste fehlen sie komplett) können dem Fenster
-      // nichts mehr anhaben. KEIN changeOrigin: SigV4 signiert den Host-Header,
-      // Garage validiert gegen den gesendeten 'localhost:<WEB_PORT>'.
+      // dev-up setzt S3_PUBLIC_ENDPOINT des chat-gateway auf GARAGE DIREKT
+      // (http://127.0.0.1:9000) — Signatur gilt für diesen Host. changeOrigin
+      // schreibt den Host-Header auf genau diesen Wert um: Die URL im Client
+      // zeigt auf dessen eigene Origin (Geräte können kein 'localhost', und
+      // neben https ist http Mixed-Content), der Proxy stellt den signierten
+      // Host wieder her. Empirie 2026-10-06: Garage validiert den Host
+      // strikt — Presign@9000+PUT@9000 = 200, jede Host-Abweichung = 403
+      // (das war unter MinIO mit MINIO_SERVER_URL anders).
       '/pulse-attachments': {
-        target: `http://127.0.0.1:${S3_PORT}`
+        target: `http://127.0.0.1:${S3_PORT}`,
+        changeOrigin: true
       }
     }
   }

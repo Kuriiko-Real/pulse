@@ -20,7 +20,10 @@ import { errText } from '$lib/utils/errText';
  */
 import { registerPlugin } from '@capacitor/core';
 import { request } from '$lib/api/client';
-import { isCapacitorAndroid } from './runtime';
+import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
+import { nativerSprachwegDa, spracheAusgabe } from './iosSprache';
+import { iosAirplayWaehler, iosTonWege, iosTonWegSetzen } from './iosAudioSession';
+import { iosAusgang, type AusgangArt } from './iosAusgang';
 
 export type AudioRoute = 'auto' | 'speaker' | 'earpiece';
 
@@ -39,6 +42,10 @@ export type AudioRouteList = {
   /** Bei current === 'device': die gepinnte Geräte-Id, sonst 0. */
   currentDeviceId: number;
   devices: AudioRouteDevice[];
+  /** Nur iOS, nur bei current === 'device': welches Gerät gerade spielt.
+   *  Gewählt wird es dort im System, nicht in dieser Liste (s. `listAudioRoutes`)
+   *  — angezeigt werden muss es trotzdem. */
+  aktiv?: { art: AusgangArt; name: string };
 };
 
 /** Native audio-routing snapshot (mirrors AudioRoutePlugin.snapshot). No audio
@@ -74,13 +81,32 @@ const plugin = registerPlugin<AudioRoutePlugin>('AudioRoute');
  *  Snapshot, damit ein stiller Routing-Fehlschlag im Feld sichtbar wird. */
 let lastSetVoiceActiveError: string | null = null;
 
-/** Force the native audio output route. No-op outside the Android wrapper.
- *  Either a fixed way (`route`) or one concrete device from
- *  {@link listAudioRoutes} (`deviceId` — z. B. ein bestimmtes BT-Headset). */
+/** Force the native audio output route. No-op outside the mobile wrappers
+ *  (Android and iOS). Either a fixed way (`route`) or one concrete device from
+ *  {@link listAudioRoutes} (`deviceId` — z. B. ein bestimmtes BT-Headset); the
+ *  `deviceId` form is Android-only, see the iOS branch below. */
 export async function setAudioRoute(
   route?: AudioRoute,
   deviceId?: number
 ): Promise<void> {
+  if (isCapacitorIOS()) {
+    if (!route) return;
+    // **Läuft der Sprachkanal nativ, gehört die Route der Hülle.** Der alte
+    // Weg drehte unsere eigene Session, und die war nie die, die den Ton
+    // abspielte — deshalb liess sich die Hörmuschel nie wählen (gemessen
+    // 2026-10-10). Nativ ist sie es, und der SDK-Schalter trägt.
+    if (nativerSprachwegDa()) {
+      await spracheAusgabe(route === 'earpiece' ? 'hoermuschel' : 'lautsprecher').catch(
+        (e: unknown) => console.warn('[audioRoute] Ausgabe an die Hülle fehlgeschlagen', e)
+      );
+      return;
+    }
+    // Ohne nativen Raum (ältere App-Fassung, oder nur Stream-Ton): der alte
+    // Weg. Er bewegt die Systemroute nicht, solange WebKit abspielt — das ist
+    // bekannt und der Grund für den Umbau.
+    await iosTonWegSetzen(route === 'earpiece' ? 'earpiece' : 'speaker');
+    return;
+  }
   if (!isCapacitorAndroid()) return;
   try {
     await plugin.setRoute({ route, deviceId });
@@ -89,9 +115,41 @@ export async function setAudioRoute(
   }
 }
 
+/** `true`, wenn diese Hülle die AirPlay-Auswahl des Systems öffnen kann.
+ *
+ *  Nur iOS. Android hat kein AirPlay, und im Browser gibt es keinen Weg zu
+ *  einem System-Dialog — dort bleibt der Eintrag deshalb aus, statt zu
+ *  erscheinen und nichts zu tun. */
+export function airplayMoeglich(): boolean {
+  return isCapacitorIOS();
+}
+
+/** Öffnet die AirPlay-Auswahl. `false` = ging nicht, dann hilft nur das
+ *  Kontrollzentrum (s. `iosAirplayWaehler`). */
+export async function airplayOeffnen(): Promise<boolean> {
+  return iosAirplayWaehler();
+}
+
 /** Auswahl-Liste für das Route-Popup (Geräte + aktuelle Wahl). Liefert eine
  *  leere Liste außerhalb des Android-Wrappers. */
 export async function listAudioRoutes(): Promise<AudioRouteList> {
+  if (isCapacitorIOS()) {
+    const wege = await iosTonWege();
+    const ausgang = iosAusgang(wege?.aktuell ?? '');
+    const aktiv =
+      ausgang.wahl === 'device' ? { art: ausgang.art, name: wege?.aktuellName ?? '' } : undefined;
+    return {
+      current: ausgang.wahl,
+      currentDeviceId: 0,
+      // **Bewusst keine Geräteliste:** auf iOS wählt man das Gerät im System
+      // (AirPlay-Eintrag bzw. Kontrollzentrum, Roadmap-Punkt 30), nicht in
+      // der App — eine eigene Liste wäre eine zweite, schlechtere Bedienung
+      // derselben Sache. Das GERADE spielende Gerät steht aber da (`aktiv`),
+      // mit Namen und passendem Zeichen (`iosAusgang.ts`).
+      devices: [],
+      aktiv
+    };
+  }
   if (!isCapacitorAndroid()) return { current: 'auto', currentDeviceId: 0, devices: [] };
   try {
     return await plugin.listRoutes();

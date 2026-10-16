@@ -12,10 +12,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+from dcc_shared.anmeldeketten import KANAL as ANMELDEKETTEN_KANAL
 from dcc_shared.events import _EventBase
 from fastapi import WebSocket
 from redis.asyncio import Redis
@@ -152,6 +154,13 @@ class ConnectionManager(
     # shared-NAT household/office of legitimate users is not collateral.
     MAX_CONNECTIONS_PER_IP = 100
 
+    # Ein Socket ohne eingehenden Frame laenger als dieser Schwellwert gilt
+    # als tot (halboffene Verbindung eines im Hintergrund suspendierten
+    # Mobilgeraets) und wird aus user_socket_count sowie den maps entfernt —
+    # sonst unterdrueckt der Gate die FCM-Pushes fuer Minuten (Befund
+    # Push-Tests 2026-10-06). Der Client pingt alle 25 s (WS_PING_INTERVAL_MS).
+    SOCKET_STALE_SEKUNDEN = 95.0
+
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
         self._hist_script = redis.register_script(_HIST_STEMPEL_LUA)
@@ -195,6 +204,9 @@ class ConnectionManager(
         # iterate only the channels that socket joined instead of scanning
         # the full ``_subs`` dict (O(subscribed) vs O(all channels)).
         self._ws_channels: dict[WebSocket, set[str]] = {}
+        # Letzter eingehender Frame je Socket (monotonische Uhr) — Grundlage
+        # der Stale-Erkennung (s. SOCKET_STALE_SEKUNDEN).
+        self._ws_last_seen: dict[WebSocket, float] = {}
         # Per-socket set of guild ids the user is a member of. Populated by
         # ``register`` (called from the WS endpoint with the same guild list
         # the ``ready`` frame is built from) and live-updated from
@@ -265,14 +277,16 @@ class ConnectionManager(
         # Plus the single voice-presence event channel, the guild-lifecycle
         # event channel, the HQ-stream-state event channel, and the watch-party
         # event channel.
-        await self._pubsub.subscribe(
+        fixed_channels = (
             VOICE_EVENTS_CHANNEL,
             GUILD_EVENTS_CHANNEL,
             STREAM_EVENTS_CHANNEL,
             WATCH_EVENTS_CHANNEL,
             USER_EVENTS_CHANNEL,
             ADMIN_EVENTS_CHANNEL,
+            ANMELDEKETTEN_KANAL,
         )
+        await self._pubsub.subscribe(*fixed_channels)
         # Re-subscribe any plugin channels that were registered at startup.
         # This is idempotent (Redis ignores duplicate subscribes) and ensures
         # plugin messages are not lost after a listener crash + restart.
@@ -289,7 +303,8 @@ class ConnectionManager(
         # rather than wedging startup. No real traffic can be in the buffer
         # yet (nothing has published at lifespan-start), so we never drop a
         # message here.
-        acks_expected = 1 + 6 + len(self._plugin_channels)  # psubscribe + fixed + plugins
+        # psubscribe + fixed + plugins
+        acks_expected = 1 + len(fixed_channels) + len(self._plugin_channels)
         acks_seen = 0
         empty_polls = 0
         while acks_seen < acks_expected and empty_polls < 3:
@@ -379,6 +394,7 @@ class ConnectionManager(
             self._ws_ip[ws] = client_ip
             self._ws_user[ws] = user
             self._connections.add(ws)
+            self._ws_last_seen[ws] = time.monotonic()
             self._ws_guilds[ws] = {int(g) for g in guild_ids}
             return True, is_first
 
@@ -416,6 +432,7 @@ class ConnectionManager(
     async def remove_socket(self, ws: WebSocket) -> None:
         async with self._lock:
             self._connections.discard(ws)
+            self._ws_last_seen.pop(ws, None)
             user = self._ws_user.pop(ws, None)
             if user is not None:
                 self._user_conns[user.id].discard(ws)
@@ -874,11 +891,90 @@ class ConnectionManager(
         active party are omitted. See ``watchkeys.py`` for the state shape."""
         return await read_states_for(self._redis, channel_ids)
 
-    def user_socket_count(self, user_id: int) -> int:
+    @property
+    def redis(self) -> Redis:
+        """Der Redis-Griff des Managers. Öffentlich, weil der Push-Weg
+        (``fcm.fan_out_fcm_dm_push``) den Badge-Zähler braucht und als
+        einzigen Zugang zum Prozess-Zustand den Manager durchgereicht
+        bekommt — ein zweiter Klient dort wäre eine zweite Verbindung."""
+        return self._redis
+
+    def mark_seen(self, ws: WebSocket) -> None:
+        """Letzten eingehenden Frame stempeln (jeder Frame zählt — auch der
+        25-s-Ping des Clients). Sync, weil nur eine Dict-Zuweisung; wird aus
+        der Empfangsschleife je Socket gerufen."""
+        if ws in self._connections:
+            self._ws_last_seen[ws] = time.monotonic()
+
+    async def stale_socket_reaper_loop(self) -> None:
+        """Schließt Sockets ohne eingehende Frames und räumt ihre Registrierung
+        ab. Ohne diesen Reaper zählt ein im Hintergrund suspendiertes
+        Mobilgerät (halboffene TCP-Verbindung, kein FIN) Minuten als online —
+        und der FCM-Push-Ausgang wird in dieser Zeit unterdrückt."""
+        while True:
+            await asyncio.sleep(30)
+            frisch_grenze = time.monotonic() - self.SOCKET_STALE_SEKUNDEN
+            tote = [
+                ws
+                for ws, gesehen in self._ws_last_seen.items()
+                if gesehen < frisch_grenze
+            ]
+            for ws in tote:
+                # Frische-Check unmittelbar vor dem Schließen: könnte der
+                # Nutzer genau jetzt aufgewacht sein, bleibt der Socket stehen.
+                if self._ws_last_seen.get(ws, 0.0) >= frisch_grenze:
+                    continue
+                nutzer = self._ws_user.get(ws)
+                try:
+                    await ws.close(code=1001, reason="stale connection")
+                except Exception:  # noqa: BLE001 — schon zu/abgebaut
+                    pass
+                await self.remove_socket(ws)
+                # Presence-Korrektur: war das der letzte Socket des Nutzers,
+                # müssen die Peers das offline sehen (derselbe Broadcast wie
+                # im regulären Disconnect-Pfad, s. ws_ops.py).
+                if nutzer is not None and self.user_socket_count(nutzer.id) == 0:
+                    try:
+                        await self.broadcast_presence_update(str(nutzer.id), online=False)
+                    except Exception:  # noqa: BLE001 — best effort
+                        pass
+            if tote:
+                # `warning`, nicht `info`: die Cloud-Vorgabe für
+                # PULSE_LOG_LEVEL ist `warning` (s. `logging_setup.py`) — auf
+                # `info` wäre die einzige Spur dieses Reapers in Produktion
+                # unsichtbar. Dieselbe Falle hat den `owner_admin_log`
+                # 29 Tage lang stumm gestellt. Und die Spur wird gebraucht:
+                # schliesst der Reaper zu scharf, sieht man sonst nur Nutzer,
+                # die scheinbar grundlos offline gehen, und hat keine Zahl
+                # dagegen.
+                log.warning("stale_sockets_entfernt anzahl=%d", len(tote))
+
+    def user_socket_count(self, user_id: int, frische_s: float | None = None) -> int:
         """How many open sockets the given user currently has. Used by the WS
         endpoint to decide whether ending one socket should end that user's
-        hosted watch parties (only true if this was their last socket)."""
-        return len(self._user_conns.get(user_id, ()))
+        hosted watch parties (only true if this was their last socket).
+
+        Zählt nur FRISCHE Sockets (eingehender Frame innerhalb
+        SOCKET_STALE_SEKUNDEN) — halboffene Verbindungen suspendierter
+        Mobilgeräte zählen nicht als online (s. mark_seen / reaper). Der
+        Reaper entfernt sie asynchron aus den maps; bis dahin liefert dieser
+        Count 0 und der FCM-Push wird korrekt ausgelöst.
+
+        ``frische_s`` verengt das Fenster für Aufrufer, die nicht 95 s warten
+        können. Eingeführt wurde er für den Anruf-Pfad (ein Anruf klingelt nur
+        45 s); der fragt seit dem 2026-10-11 gar nicht mehr nach Frische und
+        klingelt jedes iOS-Gerät per Push an — auch ein enges Fenster liess
+        ein eben weggestecktes Telefon als wach gelten (Begründung im Kopf von
+        ``anruf_push.py``). Der Parameter bleibt für Aufrufer mit derselben
+        Not."""
+        frisch_grenze = time.monotonic() - (
+            self.SOCKET_STALE_SEKUNDEN if frische_s is None else frische_s
+        )
+        return sum(
+            1
+            for ws in self._user_conns.get(user_id, ())
+            if self._ws_last_seen.get(ws, 0.0) >= frisch_grenze
+        )
 
     def online_user_ids(self) -> list[str]:
         """Return user_ids of all currently-connected users (at least one open

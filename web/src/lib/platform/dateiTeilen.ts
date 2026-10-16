@@ -1,0 +1,112 @@
+/**
+ * Anhänge speichern — Web-Share mit Dateien auf Touch-Geräten, Anker sonst;
+ * auf Android für echte Adressen der Anker zum Download-Manager (F2).
+ *
+ * WARUM: In der iOS-WKWebView gibt es keinen Download-Manager — der bisherige
+ * `<a download>`-Trick erzeugt dort nur eine Warnung und speichert nichts.
+ * Die Web-Share-API mit Dateien (`navigator.share({ files })`) läuft in der
+ * WKWebView nativ (iOS 15+) und öffnet das System-Share-Sheet mit „In Dateien
+ * sichern“/„Bild sichern“ — kein Capacitor-Plugin nötig.
+ *
+ * Der Share-Weg gilt bewusst nur bei `pointer: coarse`: Desktop-Chrome und
+ * macOS-Safari können `canShare({ files })` ebenfalls, zeigen dann aber ein
+ * OS-Share-Flyout statt eines Downloads — dort soll der Anker weiterladen.
+ *
+ * Sicherheits-Schiene: Ein leerer Dateiname fällt auf `anhang` zurück — mit
+ * `undefined`/`''` würde der Anker-Klick in die `blob:`-Adresse NAVIGIEREN
+ * statt zu speichern (ein `text/html`-Anhang liefe dann als Skript im
+ * Ursprung der Anwendung; Muster aus `MessageAttachments.svelte`,
+ * `ERSATZ_DATEINAME`).
+ *
+ * Objekt-URL-Besitz: Diese Funktion erzeugt selbst nur im Anker-Fall eine
+ * Objekt-URL und revoket sie nach dem Klick selbst (Frist gibt dem Download
+ * Zeit zu starten). Eine als `quelle` übergebene `blob:`-Adresse gehört dem
+ * Aufrufer und wird NICHT revoket — die Blätter halten ihre Objekt-URLs für
+ * wiederholte Klicks am Leben und räumen beim Abbau selbst auf.
+ *
+ * ponytail: Beide Wege halten die komplette Datei im RAM (fetch → blob →
+ * Share/Objekt-URL) — bei mehrhundert-MB-Videos ein spürbarer Spike. Der
+ * alte Anker auf fremdorigin-URLs war dagegen latent defekt (das
+ * `download`-Attribut wird cross-origin ignoriert), das Holen ist also
+ * nötig. Upgrade-Pfad: Streaming-Share via File-System-Access-API, sobald
+ * WebKit sie schreibt.
+ */
+
+import { devS3Url } from '$lib/api/devS3Url';
+// Reiner Kern in eigenem, importfreiem Modul — nur so erreicht ihn Nodes
+// Testläufer (diese Datei hier zieht `devS3Url` über den $lib-Alias nach).
+import { dateiNameOderErsatz } from './dateinameErsatz';
+import { isCapacitorAndroid } from './runtime';
+import { androidLaedtDirekt } from './speicherWeg';
+
+/**
+ * Stellt `quelle` als Datei bereit und reicht sie weiter: über das native
+ * Share-Sheet (Touch-Geräte) oder den klassischen Anker-Download (Desktop/
+ * Electron). `fetch` funktioniert auch für `blob:`-Adressen — der Aufrufer
+ * muss nicht wissen, ob hinter `quelle` der Server oder der Objektspeicher
+ * steht. Fire-and-forget wie die Vorgänger: Scheitern wird still gefangen —
+ * die Kacheln zeigen ihren Zustand ohnehin selbst, ein Rückgabewert hätte
+ * keinen Leser.
+ */
+export async function dateiTeilenOderLaden(
+  quelle: string,
+  dateiname: string | null | undefined
+): Promise<void> {
+  try {
+    const name = dateiNameOderErsatz(dateiname);
+    // Android: eine echte Adresse direkt als Anker an den Download-Manager
+    // der Hülle — ein geholter Blob käme dort nie an (iOS-Bughunt 2, F2,
+    // Begründung in `speicherWeg.ts`).
+    if (isCapacitorAndroid() && androidLaedtDirekt(quelle)) {
+      ankerKlicken(devS3Url(quelle), name, true);
+      return;
+    }
+    const antwort = await fetch(devS3Url(quelle));
+    // Abgelaufene Presigned-URL? Der Fehlerkörper wäre sonst die „Datei“.
+    if (!antwort.ok) throw new Error(`dateiTeilen: HTTP ${antwort.status}`);
+    const blob = await antwort.blob();
+    const datei = new File([blob], name, {
+      type: blob.type || 'application/octet-stream'
+    });
+
+    if (navigator.canShare?.({ files: [datei] }) && matchMedia('(pointer: coarse)').matches) {
+      try {
+        await navigator.share({ files: [datei] });
+        return; // geteilt (oder Sheet geschlossen — beides in Ordnung)
+      } catch (e) {
+        // Nutzer-Abbruch beendet den Vorgang sauber. Jede ANDERE Störung —
+        // typisch: abgelaufene Nutzeraktivierung nach langem Fetch über
+        // Mobile-Netz — fällt in den Anker-Download weiter unten, der keine
+        // Aktivierung braucht (WKWebView speichert den trotzdem nicht, aber
+        // mobile Browser tun es).
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+      }
+    }
+
+    // Anker-Fallback: der bewährte Trick auf Desktop/Electron. Die Objekt-
+    // URL gehört dieser Funktion und wird nach der Frist selbst freigegeben.
+    const adresse = URL.createObjectURL(blob);
+    ankerKlicken(adresse, name, false);
+    setTimeout(() => URL.revokeObjectURL(adresse), 10_000);
+  } catch {
+    // Hol-Fehler (Netz, HTTP, revokete blob:-Adresse) — still, wie bisher
+    // bei `blob === null`.
+  }
+}
+
+/** Ein unsichtbarer Anker, einmal geklickt. `neuesFenster`: so stand der
+ *  Anker vor 2026-10-06 in den Anhang-Karten (`target="_blank"` neben
+ *  `download`), und so erreichte er auf Android den Download-Manager — laut
+ *  Bughunt; welches der beiden Attribute es dort trägt, ist nicht gemessen. */
+function ankerKlicken(adresse: string, name: string, neuesFenster: boolean): void {
+  const a = document.createElement('a');
+  a.href = adresse;
+  a.download = name;
+  if (neuesFenster) {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  }
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}

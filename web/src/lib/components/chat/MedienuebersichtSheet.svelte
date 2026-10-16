@@ -14,6 +14,7 @@
   import BottomSheet from '$lib/components/mobile/BottomSheet.svelte';
   import AutoRefreshImage from '$lib/components/AutoRefreshImage.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
+  import AnhangLadeknopf from '$lib/components/AnhangLadeknopf.svelte';
   import FileIcon from '@lucide/svelte/icons/file';
   import DownloadIcon from '@lucide/svelte/icons/download';
   import type { Attachment, Message } from '$lib/api/types';
@@ -133,17 +134,15 @@
                 <span class="text-text-muted block text-2xs">{formatBytes(a.size)}</span>
               </span>
               {#if quelle}
-                <a
-                  href={quelle}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download={a.filename ?? 'anhang'}
+                <AnhangLadeknopf
+                  {quelle}
+                  dateiname={a.filename}
                   class="text-primary hover:bg-bg-hover flex size-8 items-center justify-center rounded-full"
                   aria-label={m.medien_datei_laden()}
                   data-testid={`media-file-download-${a.id}`}
                 >
                   <DownloadIcon class="size-4" />
-                </a>
+                </AnhangLadeknopf>
               {/if}
             </li>
           {/each}

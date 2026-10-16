@@ -12,6 +12,9 @@ import { guilds } from '$lib/stores/guilds.svelte';
 import { directMessages } from '$lib/stores/directMessages.svelte';
 import { readState } from '$lib/stores/readState.svelte';
 import { quittungen } from '$lib/stores/quittungen.svelte';
+import { startGelesenBis } from '$lib/stores/lesestandKern';
+import { auth } from '$lib/stores/auth.svelte';
+import { isCapacitorIOS } from '$lib/platform/runtime';
 import { voicePresence } from '$lib/stores/voicePresence.svelte';
 import { streamPresence } from '$lib/stores/streamPresence.svelte';
 import { watchPartyPresence } from '$lib/stores/watchPartyPresence.svelte';
@@ -41,6 +44,7 @@ import { gesundheitTor } from '$lib/stream/gesundheitTor';
 import { pruefeGesundheit } from '$lib/stream/state.svelte';
 import { standplatz } from '$lib/remote/standplatz.svelte';
 import { postfachAbholenUndAnzeigen } from './chat';
+import { badgeNachVerbindung } from '$lib/platform/badgeMelden';
 import { teardownGuildLocally } from './guildTeardown';
 import type { HandlerContext } from './context';
 import { page } from '$app/state';
@@ -156,6 +160,7 @@ export function register(
             voicePresence.isForceMuted(voice.channelId, meineId),
             voicePresence.isForceDeafened(voice.channelId, meineId)
           );
+          voice.nativErzwungenAbgleichen();
         });
       }
       streamPresence.seed(evt.stream_states ?? []);
@@ -177,9 +182,41 @@ export function register(
         // Serverseitiger Lese- und Zustellstand (P0.2, Migration 0101) je DM
         // max-mergen — der Server ist die geräteübergreifende Wahrheit, ein
         // frisch geladener Tab darf ihn nicht nach hinten ziehen.
+        // iOS-Weiche: die Start-Saat (neueste Nachricht + `startGelesenBis`)
+        // gilt nur in der iOS-Hülle — Desktop und Browser behalten den
+        // Stand von main (Rebase-Probe 2026-10-16).
+        const iosSaat = isCapacitorIOS();
         for (const dm of evt.dm_channels) {
+          if (iosSaat) {
+            // Die NEUESTE Nachricht je Kanal — ohne sie ist `isUnread` beim
+            // Start immer `false` (`latestByChannel` ist reiner
+            // Sitzungsbestand) und die App zeigt nach dem Öffnen NIRGENDS eine
+            // Ungelesen-Marke, obwohl der Server sie kennt. Am Gerät gesehen
+            // (08.10.): Icon stand auf 3, in der App stand nichts.
+            // Verschlüsselte Kanäle rührt das nicht an: dort bleibt die
+            // Server-Spalte beim letzten KLARTEXT-Stand stehen und liegt damit
+            // unter der lokalen Lesemarke — `isUnread` bleibt dort `false` und
+            // die Zählung kommt weiter aus dem Abholweg.
+            if (dm.last_message_id) {
+              readState.recordSeen(dm.id, dm.last_message_id);
+            }
+          }
           if (dm.last_read_message_id) {
             readState.seedOwnLesestand(dm.id, dm.last_read_message_id);
+          }
+          if (iosSaat) {
+            // Eigene letzte Nachricht, oder gar kein Lesestand (frische
+            // Installation, Gespräch von vor P0.2): als gelesen werten statt
+            // die ganze Geschichte rot zu zeigen (Bughunt T13, Begründung und
+            // Abwägung an `startGelesenBis`).
+            const gelesenBis = startGelesenBis({
+              letzteNachricht: dm.last_message_id,
+              letzterAutor: dm.last_message_author_id,
+              ich: auth.user?.id ? String(auth.user.id) : null,
+              serverStand: dm.last_read_message_id,
+              lokalerStand: readState.lastReadByChannel[dm.id]
+            });
+            if (gelesenBis) readState.seedOwnLesestand(dm.id, gelesenBis);
           }
           quittungen.dmSeeden(dm);
         }
@@ -237,6 +274,10 @@ export function register(
       // Postfach-Zyklus das Rennen gegen die Gruppenliste regelmassig verlor).
       // Bei ausgeschaltetem Schalter geht kein Aufruf hinaus
       // (`api/gruppen.ts`), die Antwort ist dann eine leere Liste.
+      // Nach dem Abholen dieses Durchlaufs den Badge-Stand NEU melden —
+      // auch einen unveränderten: die Cloud hat womöglich hochgezählt,
+      // während keine Verbindung stand (Bughunt T12, `badgeMelden.ts`).
+      badgeNachVerbindung();
       const abholen = () =>
         postfachAbholenUndAnzeigen((kanalId) => {
           if (!ctx.getSubs().has(kanalId)) return false;

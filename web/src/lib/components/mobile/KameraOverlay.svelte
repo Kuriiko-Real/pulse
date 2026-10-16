@@ -38,6 +38,12 @@
   import { m } from '$lib/paraglide/messages.js';
   import { Portal } from 'bits-ui';
   import { untrack } from 'svelte';
+  import {
+    berechtigungsblatt,
+    istAblehnung,
+    standLesen,
+    standMerken
+  } from '$lib/platform/berechtigung.svelte';
 
   let {
     open,
@@ -346,27 +352,77 @@
     }
   });
 
+  /** Hochgezählt im Abbau des `open`-Effekts, also bei jedem Wechsel von
+   *  `open` und beim Abbau der Komponente. Ein `starten`, das über ein
+   *  `await` hinweg seinen Lauf verloren hat, gehört zu einer Ansicht, die
+   *  nicht mehr steht (iOS-Bughunt 2, F7). */
+  let lauf = 0;
+
   async function starten(): Promise<void> {
+    const meinLauf = lauf;
     fehler = false;
     liveLaeuft = false;
     ersteFrameDa = false;
     ladeMindestens = true;
     clearTimeout(ladeTimer);
     ladeTimer = setTimeout(() => (ladeMindestens = false), 1400);
+    // Vorerklärung vor dem System-Dialog (iOS-Punkt 36). Erscheint nur beim
+    // ERSTEN Mal und nur in der iOS-Hülle — die Regel steht in
+    // `platform/berechtigungRegel.ts`. „Später" bricht hier ab, ohne den
+    // System-Dialog zu öffnen: eine einmal verweigerte Kamera-Erlaubnis wäre
+    // auf iOS dauerhaft weg.
+    const weiter = await berechtigungsblatt.fragen('kamera', standLesen('kamera'));
+    // Die Ansicht ist inzwischen zu: nichts mehr öffnen, auch kein Schliessen
+    // melden — das tat ihr Abbau schon.
+    if (meinLauf !== lauf) return;
+    if (!weiter) {
+      // „Später" heisst hier: die Kamera gar nicht öffnen. Also SCHLIESSEN —
+      // ein blosses `return` liess die Lade-Fläche stehen („Kamera startet …"),
+      // weil sie an `!liveLaeuft && !fehler` hängt und beides falsch blieb.
+      // Ein Endlos-Spinner ohne Ausweg, gefunden im Vereinfachungs-Lauf.
+      clearTimeout(ladeTimer);
+      schliessen();
+      return;
+    }
     try {
       stream?.getTracks().forEach((t) => t.stop());
-      stream = await navigator.mediaDevices.getUserMedia({
+      const neu = await navigator.mediaDevices.getUserMedia({
         // Ton immer mit — der Video-Modus braucht ihn, Foto ignoriert ihn.
         video: { facingMode: nutzeFront ? 'user' : 'environment' },
         audio: true
       });
+      // Während des System-Dialogs geschlossen: Kamera und Mikrofon sofort
+      // wieder freigeben, sonst liefen sie ohne Ansicht weiter (F7).
+      if (meinLauf !== lauf) {
+        neu.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream = neu;
+      // Der Zugriff hat geklappt — also liegt die Erlaubnis vor, und zwar für
+      // beides: der Aufruf oben verlangt Bild UND Ton. Gemerkt, damit die
+      // Vorerklärung nicht bei jedem Öffnen wiederkommt (es gibt in einer
+      // WKWebView keine Auskunft darüber, s. `berechtigung.svelte.ts`).
+      standMerken('kamera', 'erteilt');
+      standMerken('mikrofon', 'erteilt');
       videoTrack = stream.getVideoTracks()[0];
       untrack(() => anzeigeBinden());
       // Notfall: kein Ereignis → Spinner löst sich nach 4 s von selbst.
       setTimeout(() => {
         if (stream) liveLaeuft = true;
       }, 4000);
-    } catch {
+    } catch (e) {
+      // Nur eine echte ABLEHNUNG wird gemerkt. Ein belegtes oder fehlendes
+      // Gerät sagt über die Erlaubnis nichts — den Stand dort anzufassen
+      // hiesse, aus einem Zufall eine Entscheidung zu machen.
+      //
+      // Welche der beiden abgelehnt wurde, sagt der Fehler nicht — beide zu
+      // merken kann also eine zu viel treffen. Die Folge wäre eine
+      // ausgelassene VORERKLÄRUNG, nie eine ausgelassene Erlaubnis: die
+      // harmlose Richtung.
+      if (istAblehnung(e)) {
+        standMerken('kamera', 'verweigert');
+        standMerken('mikrofon', 'verweigert');
+      }
       fehler = true;
     }
   }
@@ -598,6 +654,10 @@
       });
     return () => {
       untrack(() => {
+        // Ein laufendes `starten` verliert seinen Lauf, und eine noch offene
+        // Kamera-Erklärung geht mit der Ansicht (F7).
+        lauf += 1;
+        berechtigungsblatt.abbrechen('kamera');
         if (nimmtAuf) rekorder?.stop();
         cancelAnimationFrame(zeichenRahmen);
         clearInterval(rekordTimer);
@@ -844,6 +904,7 @@
               class="bg-error flex size-20 items-center justify-center rounded-full border-4 border-white/90 shadow-[0_0_36px_rgba(37,99,235,0.7)] transition-transform active:scale-95"
               onclick={() => rekorder?.stop()}
               data-testid="camera-stop"
+              aria-label={m.kamera_aufnahme_stoppen()}
             >
               <SquareIcon class="size-8 text-white" />
             </button>
@@ -855,7 +916,7 @@
             type="text"
             bind:value={entwurfText}
             placeholder={m.message_input_placeholder()}
-            class="mb-4 w-full rounded-2xl border border-white/15 bg-black/50 px-4 py-3 text-sm text-white backdrop-blur-md outline-none placeholder:text-white/50 focus:border-white/30"
+            class="mb-4 w-full rounded-2xl border border-white/15 bg-black/50 px-4 py-3 text-base text-white backdrop-blur-md outline-none placeholder:text-white/50 focus:border-white/30 [@media(pointer:fine)]:text-sm"
             onkeydown={(e) => {
               if (e.key === 'Enter' && !e.isComposing) void entwurfSenden();
             }}
@@ -882,6 +943,7 @@
               onclick={() => void entwurfSenden()}
               disabled={sendeLaeuft || schneideLaeuft}
               data-testid="camera-send"
+              aria-label={m.kamera_senden()}
             >
               {#if sendeLaeuft || schneideLaeuft}
                 <LoaderCircleIcon class="size-7 animate-spin text-white" />

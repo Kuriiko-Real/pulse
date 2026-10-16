@@ -1,0 +1,352 @@
+/**
+ * Nativer Sprach-Raum auf iOS (Hülle: `SprachePlugin.swift`).
+ *
+ * **Warum es ihn gibt.** Den Sprachton spielt sonst WebKits eigener Prozess
+ * ab, und dessen Audio-Session fordert den Lautsprecher und ist nicht
+ * mischbar — die Hörmuschel ist aus dem Web heraus unerreichbar, und jedes
+ * Drehen an der eigenen Session unterbricht nur WebKit. Beides am 2026-10-10
+ * am Gerät gemessen; voller Befund und Zuschnitt im Entwurf
+ * `docs/superpowers/specs/2026-10-10-ios-nativer-sprachweg-design.md`.
+ *
+ * **Die Anmeldung bleibt hier.** Das Token holt weiter der Klient und reicht
+ * es hinüber; die Hülle kennt weder Konten noch Sitzungen.
+ *
+ * Alles andere (Browser, Electron, Android) sieht davon nichts — die Funktion
+ * `nativerSprachwegDa()` ist dort `false`, und der bestehende Weg bleibt.
+ */
+
+import { registerPlugin } from '@capacitor/core';
+
+import { isCapacitorIOS } from './runtime';
+import { tonNativerRaum } from './iosTon';
+import { TonHalter } from './nativeTonHalter';
+import { mikrofonBeiDerHuelleMelden } from './mikrofonBeiDerHuelle';
+import { mitFrist, SPRACHE_FRIST_KETTE_MS, SPRACHE_FRIST_SOFORT_MS } from './brueckenFrist';
+import type {
+  AnsichtThema,
+  NativerEigenerZustand,
+  NativerHoerwunsch,
+  NativerTeilnehmer,
+  NativerWunsch,
+  NativerZustand,
+  SprachePlugin
+} from './iosSpracheTypen';
+
+// Weitergereicht, damit die Aufrufer ihren Import nicht ändern müssen — die
+// Typen und die Weiche sind Teil DIESER Schnittstelle, sie liegen nur woanders
+// (die Weiche in `iosSpracheWeiche.ts`, Begründung dort).
+export type { NativerEigenerZustand, NativerTeilnehmer, NativerWunsch, NativerZustand };
+export { nativerSprachwegBefund, nativerSprachwegDa } from './iosSpracheWeiche';
+
+/**
+ * **Über `registerPlugin`, nicht über `window.Capacitor.Plugins` — und das ist
+ * kein Geschmack, das hat die App zum Absturz gebracht.**
+ *
+ * Der erste Entwurf griff das rohe Objekt aus `Capacitor.Plugins`. Methoden
+ * gehen darüber durch, Ereignis-Hörer NICHT: `addListener` lief dort über den
+ * allgemeinen Brücken-Weg, der die Argumente der Reihe nach schickt statt als
+ * benanntes Feld. Nativ kam der Ruf ohne `eventName` an, und Capacitors
+ * `addEventListener` legt ihn als Schlüssel in ein `NSMutableDictionary` —
+ * mit `nil` wirft das eine NSException, und die reisst den ganzen Prozess
+ * mit. Am 2026-10-10 am Gerät: der Beitritt zum Sprachkanal beendete die App,
+ * ohne eine einzige Zeile im Web-Log, weil es kein JS-Fehler war. Sichtbar
+ * wurde es erst im Absturzbericht (`-[CAPPlugin addEventListener:listener:]`).
+ *
+ * Verräterisch war auch der Rückgabewert: `addListener` lieferte einen
+ * String statt eines Promise. Wer diesen Weg wieder angeht, prüft das zuerst.
+ *
+ * Der Rest des Projekts macht es längst so (`schnellwahl.ts`, `appSperre`,
+ * `iosWachhalten`, Anrufe).
+ */
+const nativ = registerPlugin<SprachePlugin>('SprachePlugin');
+
+function plugin(): SprachePlugin | null {
+  // **Der Guard ist Pflicht, nicht Vorsicht.** Ausserhalb der Hülle ist das
+  // ein Web-Stub, und dessen `addListener` WIRFT („not implemented on web") —
+  // im Browser riss das schon einmal den ganzen Start mit (Befund 2026-09-09
+  // an `anruf.svelte.ts`).
+  return isCapacitorIOS() ? nativ : null;
+}
+
+/** Einen Befehl an die Hülle, mit Frist. `null` ausserhalb der Hülle. */
+function rufen<T>(
+  befehl: string,
+  frist: number,
+  ruf: (p: SprachePlugin) => Promise<T>
+): Promise<T | null> {
+  const p = plugin();
+  return p ? mitFrist(ruf(p), frist, befehl) : Promise.resolve(null);
+}
+
+/**
+ * Was WebKit über seine EIGENE Audio-Session sagt — und das entscheidet auf
+ * dem nativen Weg, ob die Hörmuschel wählbar ist.
+ * **Nur aus `halter`** (unten) — dort kippt `tonNativerRaum` mit.
+ *
+ * **Der Befund, 2026-10-10 am iPhone 16 Pro (iOS 26.6.2).** Die Hülle führt
+ * den Sprachton, aber die Oberfläche spielt weiter ihre eigenen Töne — und der
+ * erste kommt unmittelbar nach dem Beitritt (`voice.self_join` in
+ * `voice/nativerRaum.svelte.ts`). WebKit richtet dafür seine eigene Session ein,
+ * und mit der Vorgabe `auto` ist die nicht mischbar: sie übernimmt die
+ * Routen-Hoheit (im Gerätelog `cmsTakeControl … requires Volume_Routing`,
+ * `routeSharingPolicy LongFormAudio`), und iOS **unterbricht** daraufhin
+ * unsere Session. Ab da ist sie nicht mehr aktiv — und genau daran scheiterte
+ * die Hörmuschel: das SDK wählt Lautsprecher oder Hörmuschel allein über
+ * `setCategory`, und eine Kategorie bewegt an einer nicht aktiven Session
+ * keine Route (sie meldet nicht einmal einen Routenwechsel).
+ *
+ * **Gemessen, derselbe Lauf, derselbe Ton, nur dieser Wert verschieden:**
+ *
+ * | `navigator.audioSession.type` | nach dem Ton |
+ * |---|---|
+ * | `auto` (bisher) | Audio-Maschine aus, Session ohne Eingang → Umschalten wirkungslos |
+ * | `ambient` | Maschine läuft, Eingang bleibt → `Receiver` |
+ *
+ * `ambient` ist mischbar: WebKit legt seinen Ton dazu, statt die Session zu
+ * übernehmen. Die Töne bleiben hörbar — nur eben als Beiwerk neben dem
+ * Gespräch.
+ *
+ * **Der Preis, und er ist Absicht:** eine mischbare Session folgt dem
+ * Klingel-Schalter. Wer im Sprachkanal sitzt und das Telefon auf stumm
+ * stellt, hört die Oberflächen-Töne nicht mehr — was für „stumm" das
+ * Richtige ist. Deshalb gilt der Wert nur SOLANGE der native Raum steht und
+ * wird beim Verlassen auf `auto` zurückgenommen.
+ *
+ * **OFFEN, und vom Eigentümer zu entscheiden — nicht von dieser Datei:**
+ * `ambient` gilt für die GANZE WebView, also auch für den Ton einer
+ * HQ-Übertragung (WHEP), die man im Sprachkanal ansieht. Der folgt damit,
+ * solange der native Raum steht, ebenfalls dem Klingel-Schalter und endet
+ * beim Sperren des Bildschirms — und er ist dort nicht Beiwerk, sondern der
+ * Inhalt (Bughunt 2026-10-11, K2). Die Alternative `auto` kostet die
+ * Hörmuschel (Messung oben). Beides zugleich gibt die W3C-Schnittstelle nicht
+ * her; eine Lösung bräuchte eine Unterscheidung, die es heute nicht gibt
+ * (etwa den Stream-Ton ebenfalls nativ). Bis zur Entscheidung bleibt es bei
+ * `ambient` — die Hörmuschel ist der Grund für den ganzen Umbau.
+ *
+ * **Zweite Schreibstelle derselben Eigenschaft** ist `webAudioSession` in
+ * `platform/iosTon.ts`; die ist abgeschaltet (`WEB_AUDIO_SESSION_AN`) und
+ * schweigt zusätzlich, solange der native Raum steht.
+ */
+function webSessionTyp(typ: 'ambient' | 'auto'): void {
+  if (!isCapacitorIOS()) return;
+  const nav = navigator as Navigator & { audioSession?: { type: string } };
+  // Vor iOS 17 gibt es die Schnittstelle nicht. Dann bleibt es beim alten
+  // Verhalten — kein Grund, den Beitritt daran scheitern zu lassen.
+  if (!nav.audioSession) return;
+  try {
+    nav.audioSession.type = typ;
+  } catch {
+    // Ein nicht angenommener Wert darf den Beitritt nicht aufhalten.
+  }
+}
+
+/**
+ * **Ein nativer Raum steht — alles, was daran hängt, an EINER Stelle.**
+ *
+ * Drei Dinge gelten genau so lange, wie die Hülle einen Raum hält: WebKits
+ * Session ist `ambient` (s. `webSessionTyp`), `iosTon` fasst die Session
+ * nicht an, weil sie LiveKit gehört (`tonNativerRaum`, Bughunt K2), und die
+ * WebView öffnet kein Mikrofon (`mikrofonBeiDerHuelle.ts`). Bis zum
+ * 2026-10-11 hing nur das Erste hier, und es kippte nicht in allen Fällen
+ * zurück: ein gescheiterter Beitritt liess WebKit auf `ambient` stehen (M2),
+ * ein Abbruch von aussen ebenso (M1).
+ *
+ * **Halter sind der Sprachkanal und der Anruf** (Etappe 4) — als Menge
+ * (`nativeTonHalter.ts`), damit das Auflegen dem Kanal nichts wegnimmt —,
+ * dazu nach einem Neuladen der Vorhalt bis zum Abgleich (`spracheVorhalt.ts`,
+ * Bughunt 2, B4).
+ */
+const halter = new TonHalter((gehalten) => {
+  webSessionTyp(gehalten ? 'ambient' : 'auto');
+  tonNativerRaum(gehalten);
+  mikrofonBeiDerHuelleMelden(gehalten);
+});
+
+/** Einen nativen Raum anmelden oder abmelden. `'sprachkanal'` läuft über
+ *  `raumBeginnt`/`raumEndet` unten; der Anruf meldet sich hier direkt
+ *  (`anrufe/nativerAnrufRaum.ts`), `'vorhalt'` aus `spracheVorhalt.ts`. */
+export function nativerTonHalten(wer: 'sprachkanal' | 'anruf' | 'vorhalt', an: boolean): void {
+  halter.setzen(wer, an);
+}
+
+/** Hält beim Kanal die Fälle auseinander, in denen ein überholter Beitritt
+ *  erst scheitert, wenn schon der nächste läuft — sein `raumEndet` darf den
+ *  neueren nicht abräumen. */
+let raumGen = 0;
+
+function raumBeginnt(): number {
+  nativerTonHalten('sprachkanal', true);
+  return ++raumGen;
+}
+
+function raumEndet(gen?: number): void {
+  if (gen !== undefined && gen !== raumGen) return;
+  raumGen++;
+  nativerTonHalten('sprachkanal', false);
+}
+
+export async function spracheBeitreten(
+  wsUrl: string,
+  token: string,
+  kanalId: string,
+  kanalName: string,
+  startStumm: boolean,
+  startTaub: boolean,
+  zusatz?: { je: Record<string, number>; gesamt: number; community?: string }
+): Promise<NativerZustand> {
+  const p = plugin();
+  if (!p) throw new Error('SprachePlugin fehlt');
+  // **Vor dem Beitritt, nicht danach.** Der Ton, der die Session übernimmt,
+  // kommt unmittelbar nach dem gelungenen Beitritt — eine Erklärung, die
+  // erst danach abgegeben wird, kommt zu spät.
+  const gen = raumBeginnt();
+  try {
+    return await p.beitreten({
+      wsUrl,
+      token,
+      kanalId,
+      kanalName,
+      startStumm,
+      startTaub,
+      lautstaerken: zusatz?.je,
+      gesamt: zusatz?.gesamt,
+      communityName: zusatz?.community
+    });
+  } catch (e) {
+    raumEndet(gen);
+    throw e;
+  }
+}
+
+/**
+ * `sitzung`: nur verlassen, wenn genau dieser Beitritt noch läuft (s.
+ * `sitzung` in `SpracheRaum.swift`). Ohne sie trifft es, was gerade läuft.
+ */
+export async function spracheVerlassen(sitzung?: number): Promise<void> {
+  try {
+    await rufen('verlassen', SPRACHE_FRIST_SOFORT_MS, (p) =>
+      p.verlassen(sitzung === undefined ? {} : { sitzung })
+    );
+  } finally {
+    // Ein gezieltes Verlassen eines schon abgelösten Raums ändert am
+    // laufenden nichts — dann bleibt auch WebKits Erklärung stehen.
+    if (sitzung === undefined) raumEndet();
+  }
+}
+
+/**
+ * Nach einem Reload: die Hülle hält noch einen Raum, und die Seite übernimmt
+ * ihn (`voice/nativerRaum.svelte.ts`). **WebKits Erklärung gilt je
+ * Dokument** — die neue Seite hat sie nicht, also wird sie neu abgegeben.
+ */
+export function spracheRaumUebernommen(): void {
+  raumBeginnt();
+}
+
+/** Der Raum ist von aussen weggebrochen; die Hülle hat ihn schon abgeräumt. */
+export function spracheRaumWeg(): void {
+  raumEndet();
+}
+
+export async function spracheMikrofon(an: boolean): Promise<NativerZustand | null> {
+  return rufen('mikrofon', SPRACHE_FRIST_KETTE_MS, (p) => p.mikrofon({ an }));
+}
+
+/**
+ * Mithören aus. **Muss über die Brücke:** der Web-Weg schaltet dafür die
+ * `<audio>`-Elemente der fremden Spuren stumm (`RemoteAudioElements`), und
+ * die gibt es auf dem nativen Weg nicht — den Ton spielt der native Prozess.
+ * Bis zum 2026-10-10 lief `setDeafened` auf iOS deshalb ins Leere: der Knopf
+ * kippte, das Zeichen wechselte, der Server meldete allen anderen „taub" —
+ * und gehört wurde weiter alles. **Das ist schlimmer als eine fehlende
+ * Funktion**, weil es nach aussen aussieht wie eine vorhandene.
+ */
+export async function spracheTaub(an: boolean): Promise<NativerZustand | null> {
+  return rufen('taub', SPRACHE_FRIST_KETTE_MS, (p) => p.taub({ an }));
+}
+
+/**
+ * Lautstärke je Nutzer und gesamt — immer die ganze Tabelle (Begründung an
+ * `lautstaerken` in `SprachePlugin.swift`) —, dazu der Begrenzer am Ende der
+ * Wiedergabe als Feld, das eine ältere Hülle übergeht. Eine Hülle, die den
+ * Befehl nicht kennt, erreicht diese Stelle nicht mehr: die Weiche lässt sie
+ * beim Web-Weg (`SPRACHE_METHODEN`).
+ */
+export async function spracheLautstaerken(w: NativerHoerwunsch): Promise<void> {
+  await rufen('lautstaerken', SPRACHE_FRIST_KETTE_MS, (p) =>
+    p.lautstaerken({ lautstaerken: w.je, gesamt: w.gesamt, limiter: w.limiter })
+  );
+}
+
+/**
+ * Wer im Kanal von der Moderation stumm- oder taubgeschaltet ist (Nutzer-Ids)
+ * — für Schild und gesperrte Knöpfe in der nativen Ansicht. Die Hülle kennt
+ * diesen Stand sonst nicht: er kommt über die WebSocket (`voice_override`).
+ */
+export async function spracheErzwungen(stumm: string[], taub: string[]): Promise<void> {
+  await rufen('erzwungen', SPRACHE_FRIST_SOFORT_MS, (p) => p.erzwungen({ stumm, taub }));
+}
+
+export async function spracheKamera(an: boolean): Promise<NativerZustand | null> {
+  return rufen('kamera', SPRACHE_FRIST_KETTE_MS, (p) => p.kamera({ an }));
+}
+
+export async function spracheKameraSeite(front: boolean): Promise<NativerZustand | null> {
+  return rufen('kameraSeite', SPRACHE_FRIST_KETTE_MS, (p) => p.kameraSeite({ front }));
+}
+
+/**
+ * Die native Kanalansicht zeigen beziehungsweise wegnehmen — **der einzige
+ * Weg zu einem Bild.** Kamera- und Bildschirmspuren entstehen im nativen
+ * Prozess; die WebView kann sie nicht anzeigen. Deshalb wird die Ansicht
+ * nativ gezeichnet und über die Oberfläche gelegt — die Web-App bleibt
+ * darunter stehen (Entwurf §5).
+ *
+ * **Öffnen ist idempotent, Schliessen nimmt nur die ANSICHT**, nie den Raum:
+ * ein Wischen nach unten darf nicht versehentlich auflegen.
+ */
+export async function spracheAnsichtOeffnen(
+  thema: AnsichtThema
+): Promise<NativerZustand | null> {
+  return rufen('ansichtOeffnen', SPRACHE_FRIST_SOFORT_MS, (p) => p.ansichtOeffnen({ thema }));
+}
+
+export async function spracheAnsichtSchliessen(): Promise<NativerZustand | null> {
+  return rufen('ansichtSchliessen', SPRACHE_FRIST_SOFORT_MS, (p) => p.ansichtSchliessen());
+}
+
+export async function spracheAusgabe(
+  weg: 'lautsprecher' | 'hoermuschel'
+): Promise<NativerZustand | null> {
+  return rufen('ausgabe', SPRACHE_FRIST_SOFORT_MS, (p) => p.ausgabe({ weg }));
+}
+
+export async function spracheZustand(): Promise<NativerZustand | null> {
+  return rufen('zustand', SPRACHE_FRIST_SOFORT_MS, (p) => p.zustand());
+}
+
+/** Alle Ereignisse der Hülle anmelden. Gibt den Abmelder zurück. */
+export function spracheBeobachten(h: {
+  verbindung: (e: { zustand: string; fehler?: string }) => void;
+  teilnehmer: (liste: NativerTeilnehmer[]) => void;
+  sprechen: (identitaeten: string[]) => void;
+  eigenerZustand: (e: NativerEigenerZustand) => void;
+  /** Der Nutzer hat die native Ansicht verlassen — **nicht** den Raum. */
+  ansichtGeschlossen: () => void;
+  /** Ein Knopf der nativen Ansicht, dessen Regeln hier liegen. */
+  wunsch: (e: NativerWunsch) => void;
+}): () => void {
+  const p = plugin();
+  if (!p) return () => undefined;
+  const griffe = [
+    p.addListener('verbindung', h.verbindung),
+    p.addListener('teilnehmer', (e) => h.teilnehmer(e.liste)),
+    p.addListener('sprechen', (e) => h.sprechen(e.sprechen)),
+    p.addListener('eigenerZustand', h.eigenerZustand),
+    p.addListener('ansichtGeschlossen', h.ansichtGeschlossen),
+    p.addListener('wunsch', h.wunsch)
+  ];
+  return () => {
+    for (const g of griffe) void g.then((x) => x.remove()).catch(() => undefined);
+  };
+}

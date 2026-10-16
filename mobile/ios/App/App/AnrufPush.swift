@@ -1,0 +1,257 @@
+import CallKit
+import Foundation
+
+/// Eingehende Anrufe bei CallKit melden — aus einem VoIP-Push oder aus der
+/// Oberfläche (`ankommen`).
+///
+/// **Je Push-Ausgang eine Funktion, und jede ruft `beiCallKitMelden`**, den
+/// einzigen Weg zu `reportNewIncomingCall`. Welcher Ausgang gilt, entscheidet
+/// `pushAusgang` (`AnrufPushAusgang.swift`, dort auch Apples Regel); der
+/// `switch` in `pushVerarbeiten` ist erschöpfend, ein Push kann also keinen
+/// Weg ohne Meldung nehmen. Die einzige Lücke wäre ein fehlender
+/// `CXProvider`, und die schliesst die Reihenfolge in `starten()`. PushKits
+/// `completion` läuft erst, wenn CallKit geantwortet hat. Nachgezählt im
+/// Debug-Bau (`AnrufPushProbe.swift`).
+extension Anrufverwaltung {
+    /// Ein VoIP-Push — aus `pushRegistry(_:didReceiveIncomingPushWith:…)`,
+    /// im Debug-Bau auch aus dem Prüfpfad mit selbst gebauter Nutzlast.
+    func pushVerarbeiten(_ inhalt: [AnyHashable: Any], fertig: @escaping () -> Void) {
+        let kennung = inhalt["call_id"] as? String ?? ""
+        let name = inhalt["einleiter_name"] as? String ?? "Pulse"
+        let art: PushArt = inhalt["art"] as? String == "abbruch" ? .abbruch : .klingeln
+        let bekannt = uuid(fuer: kennung)
+        let phase = bekannt.flatMap { phasen[$0] }
+        let abgeloest = bekannt == nil && art == .klingeln
+            ? klingelnderAnruf(kanal: inhalt["channel_id"] as? String ?? "", ausser: kennung) : nil
+        let ausgang = Self.pushAusgang(
+            art: art, bekannt: bekannt, klingelt: phase == .klingelt,
+            kuerzlichBeendet: istKuerzlichBeendet(kennung),
+            ohneCallKit: !kennung.isEmpty && ohneCallKitKennung == kennung,
+            angenommenOhneRaum: phase == .angenommen && !raumBegonnen.contains(kennung),
+            besetzt: besetzt(ausser: [kennung, abgeloest.flatMap { kennungen[$0] } ?? ""]),
+            abgeloest: abgeloest)
+        NSLog("[PulseAnruf] VoIP-Push %@ %@ → %@", art.rawValue, kennung, "\(ausgang)")
+        #if DEBUG
+            spur.ausgang = ausgang
+        #endif
+        // Auch für einen bekannten Anruf: hat ihn die Oberfläche gemeldet
+        // (`ankommen`), bringt erst der Push Kanal und Art mit. Nicht für
+        // einen, den hier niemand führt — sein Kontext bliebe für immer
+        // liegen (`stillVergessen` räumt nur Gebuchtes).
+        if art == .klingeln, ausgang != .meldenUndSofortBeenden, ausgang != .besetzt {
+            kontextMerken(kennung: kennung, inhalt: inhalt)
+        }
+        switch ausgang {
+        case .neuMelden:
+            // `anruf_art` ist `dm` oder `gruppe`, NICHT Video (G3): ein Anruf
+            // beginnt immer ohne Kamera.
+            neuMelden(kennung: kennung, name: name, video: false, fertig: fertig)
+        case .erneutMelden(let uuid):
+            erneutMelden(uuid, name: name, beenden: false, fertig: fertig)
+        case .erneutMeldenUndBeenden(let uuid):
+            erneutMelden(uuid, name: name, beenden: true, fertig: fertig)
+        case .meldenUndSofortBeenden:
+            meldenUndSofortBeenden(name: name, fertig: fertig)
+        case .besetzt:
+            // Als beendet merken: ein späterer Push oder ein `ankommen` der
+            // Oberfläche klingelt dafür nicht mehr. „ablehnen" erreicht den
+            // Server über das Web auch, wenn es gerade eingefroren ist
+            // (aufbewahrt, sobald es wieder läuft); lehnt es selbst schon ab
+            // (`anruf.svelte.ts`, `eingehend`), ist das zweite folgenlos.
+            kuerzlichBeendet[kennung] = Date()
+            bruecke?.aktionMelden(aktion: "ablehnen", kennung: kennung, kontext: [:])
+            meldenUndSofortBeenden(name: name, fertig: fertig)
+        case .abloesen(let alt):
+            // ERST den alten beenden, dann den neuen melden: CallKit führt
+            // höchstens eine Anrufgruppe (`starten()`), und der neue käme
+            // sonst als Anklopfen neben den alten (A5).
+            abloesen(alt)
+            neuMelden(kennung: kennung, name: name, video: false, fertig: fertig)
+        }
+    }
+
+    /// Läuft oder klingelt hier ein Anruf, der nicht in `ausser` steht? (A5)
+    private func besetzt(ausser: Set<String>) -> Bool {
+        kennungen.values.contains { !ausser.contains($0) }
+            || (ohneCallKitKennung.map { !ausser.contains($0) } ?? false)
+    }
+
+    /// Ein noch klingelnder Anruf desselben Kanals, ausser `kennung` selbst
+    /// (R1, `pushAusgang`). Den Kanal kennt die Hülle aus dem Push; einen
+    /// Anruf, den nur die Oberfläche gemeldet hat (`ankommen`, ohne Push),
+    /// findet sie hier nicht — er bleibt `besetzt` wie bisher. Seit T14 kommt
+    /// zu jedem Anruf ein Push, also ist das der seltene Rest.
+    private func klingelnderAnruf(kanal: String, ausser kennung: String) -> UUID? {
+        guard !kanal.isEmpty else { return nil }
+        return kennungen.first { uuid, kn in
+            kn != kennung && phasen[uuid] == .klingelt && !raumBegonnen.contains(kn)
+                && kontexte[kn]?["channel_id"] == kanal
+        }?.key
+    }
+
+    /// Den abgelösten Anruf beenden. **Ohne Ruf an den Server**: dort ist er
+    /// vorbei oder wird es gleich (sein Abbruch ist unterwegs). Das Web
+    /// erfährt es (`beendet`, aufbewahrt), sonst stünde dort weiter ein
+    /// klingelnder Anruf, der jeden neuen ablehnt (R3). Kommt der Abbruch
+    /// danach noch, findet er hier nichts mehr und wird nach Apples Regel
+    /// gemeldet und sofort beendet (`meldenUndSofortBeenden`, über
+    /// `kuerzlichBeendet` aus `anrufZu`).
+    private func abloesen(_ alt: UUID) {
+        NSLog("[PulseAnruf] %@ klingelte noch — ein neuer Anruf desselben Kanals löst ihn ab",
+              kennungen[alt] ?? "?")
+        melde("beendet", alt)
+        anbieter?.reportCall(with: alt, endedAt: nil, reason: .remoteEnded)
+        anrufZu(alt)
+    }
+
+    /// Die Oberfläche meldet einen Anruf (`ankommen`): die WebSocket war
+    /// schneller als der Push. Hier gilt Apples Pflicht nicht — ein schon
+    /// gemeldeter, ein ohne CallKit laufender oder ein eben beendeter Anruf
+    /// verfällt still; ein zweiter Bildschirm wäre ein zweiter Anruf.
+    func klingeln(kennung: String, name: String, video: Bool) {
+        guard !fuehrt(kennung), !istKuerzlichBeendet(kennung) else { return }
+        neuMelden(kennung: kennung, name: name, video: video) {}
+    }
+
+    // MARK: - Die Ausgänge
+
+    private func neuMelden(kennung: String, name: String, video: Bool,
+                           fertig: @escaping () -> Void) {
+        let uuid = UUID()
+        kennungen[uuid] = kennung
+        phasen[uuid] = .klingelt
+        beiCallKitMelden(uuid, name: name, video: video) { folge in
+            switch folge {
+            case .angezeigt:
+                self.klingelFristStellen(uuid)
+            case .schonBekannt:
+                // Bei einer frischen UUID nicht zu erwarten — und käme es doch,
+                // führte CallKit darunter schon einen Anruf: nicht vergessen,
+                // keine zweite Frist.
+                break
+            case .abgewiesen:
+                // Der Anruf ist damit ERLEDIGT, nicht verschoben.
+                self.vergessen(uuid)
+            }
+            fertig()
+        }
+    }
+
+    /// Ein Push für einen Anruf, den CallKit schon führt: mit der BESTEHENDEN
+    /// UUID melden. Die erwartete Antwort ist `callUUIDAlreadyExists`, und der
+    /// laufende Anruf bleibt, wie er ist; nur ein klingelnder (oder ein
+    /// angenommener ohne Raum, A3) wird auf einen Abbruch hin beendet — nach
+    /// der Meldung, s. `PushAusgang`.
+    private func erneutMelden(_ uuid: UUID, name: String, beenden: Bool,
+                              fertig: @escaping () -> Void) {
+        beiCallKitMelden(uuid, name: name, video: false) { folge in
+            // Am Gerät der Beleg, dass CallKit das Duplikat erkannt hat.
+            NSLog("[PulseAnruf] erneut gemeldet, CallKit: %@", "\(folge)")
+            let raum = self.kennungen[uuid].map { self.raumBegonnen.contains($0) } ?? false
+            switch Self.nachErneuterMeldung(folge, beenden: beenden, phase: self.phasen[uuid],
+                                            raumBegonnen: raum) {
+            case .nichts:
+                break
+            case .beenden:
+                // **Das Web erfährt es** (R3) — aufbewahrt, die Oberfläche kann
+                // eingefroren sein oder eben neu geladen haben (A10: dann zeigt
+                // sie das Klingeln wieder an und hörte sonst nie, dass es
+                // vorbei ist). Vor `anrufZu`: das nimmt den Kontext mit.
+                self.melde("beendet", uuid)
+                self.anbieter?.reportCall(with: uuid, endedAt: nil, reason: .remoteEnded)
+                self.anrufZu(uuid)
+            case .geisterBeenden:
+                NSLog("[PulseAnruf] CallKit kannte den Anruf nicht mehr und zeigte ihn neu — beendet")
+                self.anbieter?.reportCall(with: uuid, endedAt: nil, reason: .remoteEnded)
+            }
+            fertig()
+        }
+    }
+
+    /// **Für Pushes, zu denen es hier keinen Anruf gibt** — Abbruch eines
+    /// unbekannten Anrufs, Klingeln eines eben beendeten. Apples Vorgabe für
+    /// diesen Fall: melden und sofort beenden (PushKit-Dokumentation,
+    /// „Responding to VoIP Notifications from PushKit"; gefolgert, nicht am
+    /// Gerät gemessen). Ob der Bildschirm dabei kurz aufblitzt, ist am Gerät
+    /// offen — der Server vermeidet den Fall, so gut er kann (Bughunt K3).
+    private func meldenUndSofortBeenden(name: String, fertig: @escaping () -> Void) {
+        let uuid = UUID()
+        beiCallKitMelden(uuid, name: name, video: false) { _ in
+            self.anbieter?.reportCall(with: uuid, endedAt: nil, reason: .remoteEnded)
+            fertig()
+        }
+    }
+
+    // MARK: - Die Meldung selbst
+
+    /// **Der einzige Weg zu `reportNewIncomingCall`.** `danach` läuft auf dem
+    /// Hauptthread (CallKit ruft auf der Delegat-Queue, `CXProvider.h`).
+    private func beiCallKitMelden(_ uuid: UUID, name: String, video: Bool,
+                                  danach: @escaping (MeldungsFolge) -> Void) {
+        // Nicht zu erreichen: `starten()` legt den Anbieter vor der
+        // Push-Registrierung an, und das Plugin ruft `starten()` vor jedem
+        // `ankommen`.
+        guard let anbieter else {
+            NSLog("[PulseAnruf] kein CXProvider — Meldung unmöglich")
+            danach(.abgewiesen)
+            return
+        }
+        let stand = CXCallUpdate()
+        stand.remoteHandle = CXHandle(type: .generic, value: name)
+        stand.localizedCallerName = name
+        stand.hasVideo = video
+        stand.supportsDTMF = false
+        stand.supportsHolding = false
+        stand.supportsGrouping = false
+        stand.supportsUngrouping = false
+        #if DEBUG
+            spur.meldungen += 1
+        #endif
+        anbieter.reportNewIncomingCall(with: uuid, update: stand) { fehler in
+            let folge = Self.meldungsFolge(fehler)
+            #if DEBUG
+                self.spur.folge = folge
+            #endif
+            if let fehler, folge == .abgewiesen {
+                // **Nachträglich dazugekommen, mit Anlass** (2026-10-08): bei
+                // „Nicht stören" klingelte nichts, und nichts sagte warum.
+                // Häufige Gründe: `filteredByDoNotDisturb`,
+                // `filteredByBlockList`, `maximumCallGroupsReached`.
+                NSLog("[PulseAnruf] CallKit hat den Anruf abgewiesen: %@",
+                      (fehler as NSError).localizedDescription)
+            }
+            danach(folge)
+        }
+    }
+
+    private func klingelFristStellen(_ uuid: UUID) {
+        let uhr = DispatchWorkItem { [weak self] in
+            guard let self, phasen[uuid] == .klingelt else { return }
+            NSLog("[PulseAnruf] nach %.0f s nicht angenommen — das Klingeln endet", Self.klingelFrist)
+            anbieter?.reportCall(with: uuid, endedAt: nil, reason: .unanswered)
+            // Wie der 45-s-Wecker des Webs: der Server soll es wissen (im
+            // Gruppenanruf geht das seit T4 auch, wenn schon jemand spricht).
+            melde("ablehnen", uuid)
+            anrufZu(uuid)
+        }
+        klingelUhren[uuid] = uhr
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.klingelFrist, execute: uhr)
+    }
+
+    func istKuerzlichBeendet(_ kennung: String) -> Bool {
+        let grenze = Date().addingTimeInterval(-10 * 60)
+        kuerzlichBeendet = kuerzlichBeendet.filter { $0.value > grenze }
+        return kuerzlichBeendet[kennung] != nil
+    }
+
+    /// Kontext aus einem Push merken. Nur Strings — was hier hineinkommt,
+    /// geht unverändert ins Web und soll dort nicht erst gedeutet werden.
+    private func kontextMerken(kennung: String, inhalt: [AnyHashable: Any]) {
+        guard !kennung.isEmpty else { return }
+        var k: [String: String] = [:]
+        for feld in ["channel_id", "anruf_art", "einleiter_id", "einleiter_name"] {
+            if let wert = inhalt[feld] as? String { k[feld] = wert }
+        }
+        kontexte[kennung] = k
+    }
+}

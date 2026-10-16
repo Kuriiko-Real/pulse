@@ -375,6 +375,7 @@ async def fan_out_dm_push(
     ``manager`` (ConnectionManager) gates the FCM leg: Android-Geräte des
     Empfängers bekommen den System-Push nur, wenn KEINE offene WebSocket-
     Verbindung besteht (Übergabe P0.1) — wer online ist, hat den WS-Weg.
+    iOS-Geräte bekommen ihn immer (``fcm_empfaenger.py``, iOS-Bughunt 2, C1).
     """
     payload = {
         "type": "dm",
@@ -401,6 +402,7 @@ async def fan_out_dm_push_encrypted(
     author_name: str,
     channel_id: int,
     manager=None,
+    hat_anhang: bool = False,
 ) -> None:
     """Push eine geschlossene-Browser-Benachrichtigung fuer eine ende-zu-
     ende-verschluesselte DM aus.
@@ -426,11 +428,16 @@ async def fan_out_dm_push_encrypted(
         "icon": None,
     }
     await _fan_out_payload(recipient_ids, payload)
+    # Nur das FCM-Bein trägt den Anhang-Hinweis: dort landet er auf einem
+    # Sperrbildschirm, wo er den Unterschied macht. Der Web-Push oben bleibt
+    # wie er war — er erscheint im Browser, wo die App meist ohnehin offen
+    # ist, und sein Text weicht seit jeher ab ("Neue Direktnachricht").
     await fan_out_fcm_dm_push(
         recipient_ids=recipient_ids,
         author_name=author_name,
         channel_id=channel_id,
         manager=manager,
+        hat_anhang=hat_anhang,
     )
 
 

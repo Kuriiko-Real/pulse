@@ -2,6 +2,18 @@
   "_comment": "Pulse-Changelog. Neuester Eintrag zuerst. Wird beim Update-Reload einmalig als nicht-blockierender Toast unten rechts gezeigt, sobald der User eingeloggt ist (siehe web/src/lib/components/ChangelogGate.svelte + ChangelogToast.svelte). Pflege-Regeln: CLAUDE.md → 'Changelog'. Stil pro Eintrag wird vor jedem Push mit dem User abgestimmt. KEINE Emojis, nirgends.",
   "entries": [
     {
+      "id": "2026-10-16.7",
+      "date": "2026-10-16",
+      "style": "Sachlich",
+      "title": "Bildansicht und Verbindung",
+      "items": [
+        "Bilder lassen sich in der Großansicht per Doppelklick vergrößern und mit der Maus verschieben.",
+        "Bricht die Verbindung zum Server ab, zeigt ein Hinweis oben das an.",
+        "Nach dem Aufwachen des Rechners verbindet Pulse schneller neu.",
+        "Abmelden verlässt auch den Sprachkanal und beendet laufende Anrufe."
+      ]
+    },
+    {
       "id": "2026-10-16.6",
       "date": "2026-10-16",
       "style": "Sachlich",

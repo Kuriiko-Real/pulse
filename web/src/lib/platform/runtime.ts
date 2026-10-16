@@ -43,9 +43,11 @@ export const isServerApp = (): boolean =>
  *
  * Deliberately narrowed against iOS (seit es auch eine iOS-Hülle gibt,
  * 2026-10-05): `isNativePlatform()` alone would fire inside the iOS wrapper
- * too, where none of the Android Java plugins exist. All Android-only gates
- * (FCM, AudioRoute, ShareReceiver, back button, audio-device curation) keep
- * working unchanged — they now just stop short of iOS.
+ * too, where none of the Android Java plugins exist. The Android-only gates
+ * (AudioRoute, back button, audio-device curation) keep working unchanged —
+ * they just stop short of iOS. FCM and ShareReceiver stood in this list
+ * until their iOS counterparts landed; `fcm.ts` and `shareEmpfang.ts` now
+ * gate on both.
  */
 export const isCapacitorAndroid = (): boolean =>
   capNativePlatform() && !isIosUserAgent();
@@ -67,6 +69,19 @@ const capNativePlatform = (): boolean => {
     .Capacitor;
   return !!cap?.isNativePlatform?.();
 };
+
+/**
+ * True on iPhone/iPad/iPod — in the Capacitor iOS wrapper AND in any iOS
+ * browser (Safari, and Chrome/Firefox on iOS, which are WebKit underneath).
+ * Same UA check as `isCapacitorIOS()`, without the native-bridge part.
+ *
+ * Gates behaviour that exists because of WebKit's media rules (user
+ * activation is lost across an `await`, autoplay rejections), so that Android
+ * (wrapper and Chrome) and the desktop keep the path they had before the iOS
+ * work (Eigentümer-Grundsatz 2026-10-16). Never true in Electron: a Mac's UA
+ * says "Macintosh", and `maxTouchPoints` is 0 there.
+ */
+export const isIosWebKit = (): boolean => isIosUserAgent();
 
 /** iPhone/iPad/iPod UA, including iPadOS 13+ masquerading as macOS. */
 const isIosUserAgent = (): boolean => {

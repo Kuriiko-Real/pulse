@@ -16,7 +16,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCapacitorAndroid, isCapacitorIOS } from '../src/lib/platform/runtime.ts';
+import { isCapacitorAndroid, isCapacitorIOS, isIosWebKit } from '../src/lib/platform/runtime.ts';
 
 function setzeUmgebung(capacitor: boolean, ua: string, maxTouchPoints = 0): void {
 	const window = capacitor
@@ -67,5 +67,27 @@ describe('Plattform-Erkennung (Capacitor Android vs. iOS)', () => {
 		setzeUmgebung(true, UA_IPAD_MASQUERADE, 0);
 		assert.equal(isCapacitorAndroid(), true);
 		assert.equal(isCapacitorIOS(), false);
+	});
+});
+
+// Weiche für die WebKit-Medienregeln (Eigentümer-Grundsatz 2026-10-16):
+// Android (Hülle und Chrome) und Desktop behalten den alten Weg.
+describe('isIosWebKit (iOS-Hülle UND iOS-Browser, sonst nichts)', () => {
+	it('iPhone und iPad — mit und ohne Capacitor', () => {
+		for (const nativ of [true, false]) {
+			setzeUmgebung(nativ, UA_IPHONE);
+			assert.equal(isIosWebKit(), true, `iPhone nativ=${nativ}`);
+			setzeUmgebung(nativ, UA_IPAD_MASQUERADE, 5);
+			assert.equal(isIosWebKit(), true, `iPad nativ=${nativ}`);
+		}
+	});
+
+	it('Android (Hülle und Chrome) und ein Mac ohne Touch: false', () => {
+		for (const nativ of [true, false]) {
+			setzeUmgebung(nativ, UA_ANDROID);
+			assert.equal(isIosWebKit(), false, `Android nativ=${nativ}`);
+		}
+		setzeUmgebung(false, UA_IPAD_MASQUERADE, 0);
+		assert.equal(isIosWebKit(), false, 'Mac-Browser/Electron');
 	});
 });

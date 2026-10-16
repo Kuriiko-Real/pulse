@@ -56,6 +56,19 @@
   display: none;
 }
 
+/* Dasselbe Spiel für das selbst gebaute Vollbild (iPhone, s. `TileShell`):
+   war es beim Weg-Navigieren an, trägt die Kachel noch `fixed inset-0` und
+   deckte als Eckfenster den ganzen Bildschirm zu. Höhere Spezifität als die
+   Tailwind-Klasse (Klasse + Attribut gegen Klasse), deshalb ohne `!important`.
+   `inset`/`z-index` fallen mit `position: static` von selbst weg; sie stehen
+   hier nur, damit nichts hängen bleibt, wenn die Kachel später eine andere
+   Positionierung bekommt. */
+.pip-eckfenster [data-eigenes-vollbild] {
+  position: static;
+  inset: auto;
+  z-index: auto;
+}
+
 /* "Glasshouse / Graphite" — heller, luftiger Glas-Look mit Electric-Blue-
    Ton-in-Ton-Akzent. Light ist der Default; .dark trägt die dunkle Variante.
    Die Semantik-Tokens unten mappen auf die Glas-Palette, damit die
@@ -208,6 +221,16 @@
   html,
   body {
     height: 100%;
+  }
+
+  /* App-Shell statt Webseite: kein Gummiband am Root — Scrollen gehört den
+     inneren Listen (overflow-y-auto). NUR in der iOS-Hülle (`data-huelle`,
+     gesetzt in `routes/+layout.svelte`; dort zusätzlich nativ per
+     ios.scrollEnabled=false): im Browser nähme es die Zurück-Geste am Mac
+     und Pull-to-Refresh in Android-Chrome weg. */
+  :root[data-huelle='ios'],
+  :root[data-huelle='ios'] body {
+    overscroll-behavior: none;
   }
 
   body {
@@ -556,6 +579,13 @@
      --safe-bottom) verwenden, nie env() direkt. */
   --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  /* Seitlich — erst seit dem 2026-10-08 nötig und deshalb vorher nicht da:
+     bis dahin war die iOS-Hülle auf Hochformat gelockt, und im Hochformat
+     sind links und rechts null. Mit dem Querformat fürs Stream-Vollbild
+     (Punkt 27) wandert die Aussparung an eine SEITE, und die schwebende
+     Stream-Steuerung sass darunter. Dieselbe Kette wie oben. */
+  --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 
   /* Glas-Palette
      Hell ist KEINE Spiegelung von dunkel. Bis 2026-07-20 waren Flächen und

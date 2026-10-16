@@ -78,14 +78,37 @@ if test -z "$internal_secret"
     _warn "INTERNAL_SERVICE_SECRET fehlt in .env — Account-Löschung (DELETE /me) bleibt 503. Generieren: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
 end
 
+# Archiv-Schrank-Geheimnis (auth): ohne es 503t PUT /me/archiv-schluessel und
+# die Online-Sicherung lässt sich nicht einrichten (Befund 2026-10-06).
+# Wird bei Fehlen EINMAL generiert und in .env abgelegt — es muss stabil
+# bleiben, ein Re-Wrap unter anderem Geheimnis würde bestehende Schränke
+# unlesbar machen.
+set -l archiv_secret (_read_env_var ARCHIV_SCHRANK_SECRET)
+if test -z "$archiv_secret"
+    set archiv_secret (python3 -c 'import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())'); or _die "python3 fehlt — ARCHIV_SCHRANK_SECRET kann nicht generiert werden"
+    echo "ARCHIV_SCHRANK_SECRET=$archiv_secret" >> .env; or _die ".env nicht beschreibbar — das Secret würde bei jedem Lauf rotieren und bestehende Archiv-Schränke unlesbar machen"
+    _warn "ARCHIV_SCHRANK_SECRET fehlte in .env — neu generiert und angehängt."
+end
+
 # --- Container --------------------------------------------------------------
+
+# macOS: LiveKit und MediaMTX laufen nur mit den Aufsätzen `*.mac.yml`
+# (intern/docs/dev-macos.md) — Host-Networking meint auf Docker Desktop die Linux-VM.
+# Ohne sie stellte jeder Lauf hier die Container auf die Haupt-Datei zurück,
+# und Sprachkanal und Übertragungen waren wieder tot (iOS-Bughunt 2, E5).
+# Ein Aufruf für beide Projekte: die Dateinamen gelten im jeweiligen
+# Verzeichnis (Wurzel bzw. `streaming/server`), und beide tragen ihren Aufsatz.
+set -l compose docker compose
+if test (uname) = Darwin
+    set compose docker compose -f docker-compose.yml -f docker-compose.mac.yml
+end
 
 _info "Container starten (Postgres + Redis + Garage + LiveKit)"
 # Bewusst OHNE --no-recreate: dev-up soll Änderungen an docker-compose.yml
 # anwenden. Deshalb nur aus dem Haupt-Checkout starten — aus einem Worktree
 # hingen die gemeinsamen Container danach an dessen Pfaden (Begründung:
 # web/tests/e2e/_globalSetup.ts, ensureInfra).
-docker compose --profile voice up -d >/dev/null 2>&1; or _die "docker compose root failed"
+$compose --profile voice up -d >/dev/null 2>&1; or _die "docker compose root failed"
 
 # Garage-Bootstrap (Bucket + Key, idempotent) — das dxflrs-Image hat keine
 # Shell, darum host-seitig per exec (Bughunt-Entscheidung 4.1). Fehler sind
@@ -103,6 +126,14 @@ if test -f .garage-dev-credentials
     set -l gs (grep -m1 "^GARAGE_S3_SECRET=" .garage-dev-credentials | string replace -r "^GARAGE_S3_SECRET=" "")
     set -gx S3_ACCESS_KEY $gk
     set -gx S3_SECRET_KEY $gs
+end
+
+# Firebase-Admin-Service-Account (chat-gateway): ohne ihn gibt ensure_fcm()
+# None zurück und der FCM-Push wird STILL übersprungen (Befund 2026-10-06 —
+# auch der Android-Push war im Dev-Stack dadurch nie scharf). Pfad ist
+# maschinenunabhängig, die Datei selbst gitignored.
+if test -f $repo_root/secrets/firebase/pulse-8cad0-service-account.json
+    set -gx FIREBASE_SERVICE_ACCOUNT_KEY $repo_root/secrets/firebase/pulse-8cad0-service-account.json
 end
 
 # PULSE_DEV_SKIP_MEDIAMTX=1 laesst MediaMTX weg — fuer Arbeiten an Chat, Voice
@@ -134,7 +165,7 @@ else if not diff -q (grep -vE '^\s*(#|$)' mediamtx.yml.template | psub) \
     _warn "mediamtx.yml weicht von mediamtx.yml.template ab — Unterschiede prüfen:"
     _warn "  diff streaming/server/mediamtx.yml.template streaming/server/mediamtx.yml"
 end
-docker compose up -d mediamtx >/dev/null 2>&1; or _die "docker compose mediamtx failed"
+$compose up -d mediamtx >/dev/null 2>&1; or _die "docker compose mediamtx failed"
 cd $repo_root
 end
 
@@ -190,21 +221,26 @@ set -l common_env "REDIS_URL=redis://localhost:6380/0 AUTH_JWKS_URL=http://127.0
 # auf an und ruft `GET /gruppen` bei jedem Start — ohne den Server-Schalter
 # antwortet der chat-gateway 403, bei jedem Verbindungsaufbau (2026-09-02).
 set -l upload_env "CLOUD_DM_ATTACHMENTS_ENABLED=true CLOUD_DROPBOX_ENABLED=true CLOUD_ATTACHMENT_MIME_PREFIXES= PRIVATE_GROUPS_ENABLED=true"
-# S3_PUBLIC_ENDPOINT auf den Vite-Dev-Server: Presigned-URLs für den Browser
-# laufen damit SAME-ORIGIN über dessen /pulse-attachments-Proxy (vite.config.ts)
-# — exakt die Prod-Topologie (nginx/Caddy vor dem Speicher). Grund: Garage
-# schickt auf FEHLERantworten (404 einer noch nicht existierenden Dateiliste)
-# keine CORS-Header, der Browser macht daraus "blocked by CORS policy" statt
-# "nicht gefunden", und Ablage/Laufwerk sterben schon beim ersten Listen-
-# Abruf. SigV4 signiert den Host localhost:5173; der Proxy reicht ihn unver-
-#ändert durch (kein changeOrigin), Garage validiert genau den.
-set -l upload_env "$upload_env S3_PUBLIC_ENDPOINT=http://localhost:5173"
+# S3_PUBLIC_ENDPOINT auf Garage direkt: Der Gateway signiert für diesen Host,
+# der Vite-Proxy (/pulse-attachments, changeOrigin) stellt ihn auf dem Weg zum
+# Objektspeicher wieder her — die Client-URL zeigt trotzdem auf dessen eigene
+# Origin (Geräte können kein 'localhost', https-Seiten kein http — Rewrites
+# in web/src/lib/api/devS3Url.ts).SAME-ORIGIN bleibt also bestehen, und
+# Garages lückenhafte CORS-Header (auf Fehlerantworten fehlen sie komplett)
+# können dem Fenster nichts mehr anhaben. Empirie 2026-10-06: Garage
+# validiert den signierten Host strikt — der alte Vertrag (signiert
+# localhost:5173, Proxy reicht den Client-Host durch) hielt nur auf dem
+# Rechner selbst, nicht für Geräte im LAN.
+set -l upload_env "$upload_env S3_PUBLIC_ENDPOINT=http://127.0.0.1:9000"
+set -l fcm_env "FIREBASE_SERVICE_ACCOUNT_KEY=$repo_root/secrets/firebase/pulse-8cad0-service-account.json"
 set -l pg_env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD POSTGRES_HOST=localhost POSTGRES_PORT=5434"
 set -l jwt_env "JWT_PRIVATE_KEY_FILE=$repo_root/secrets/jwt_private.pem JWT_PUBLIC_KEY_FILE=$repo_root/secrets/jwt_public.pem"
 set -l lk_env "LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=devsecretdevsecretdevsecretdevsecret LIVEKIT_URL=ws://localhost:7880"
 # auth + chat-gateway teilen das Internal-Secret; auth braucht zusätzlich
-# CHAT_GATEWAY_URL (Default zeigt auf den Docker-Namen, lokal unerreichbar).
+# CHAT_GATEWAY_URL (Default zeigt auf den Docker-Namen, lokal unerreichbar)
+# und das Archiv-Schrank-Geheimnis (Online-Sicherung).
 set -l internal_env "INTERNAL_SERVICE_SECRET=$internal_secret"
+set -l archiv_env "ARCHIV_SCHRANK_SECRET=$archiv_secret"
 
 _info "Uvicorns starten (mit --reload)"
 
@@ -216,10 +252,10 @@ _info "Uvicorns starten (mit --reload)"
 # der Alembic-Schritt oben läuft weiter über `uv run`.
 
 # auth (8001)
-bash -c "cd services/auth && env $pg_env $jwt_env $common_env $internal_env CHAT_GATEWAY_URL=http://127.0.0.1:8002 setsid nohup $repo_root/.venv/bin/uvicorn dcc_auth.app:app --host 127.0.0.1 --port 8001 --reload > /tmp/dcc-auth.log 2>&1 < /dev/null &"
+bash -c "cd services/auth && env $pg_env $jwt_env $common_env $internal_env $archiv_env CHAT_GATEWAY_URL=http://127.0.0.1:8002 setsid nohup $repo_root/.venv/bin/uvicorn dcc_auth.app:app --host 127.0.0.1 --port 8001 --reload > /tmp/dcc-auth.log 2>&1 < /dev/null &"
 
 # chat-gateway (8002)
-bash -c "cd services/chat-gateway && env $pg_env $common_env $internal_env $upload_env MEDIA_SVC_URL=http://127.0.0.1:8004 setsid nohup $repo_root/.venv/bin/uvicorn dcc_chat_gateway.app:app --host 127.0.0.1 --port 8002 --ws-max-size 65536 --reload > /tmp/dcc-chat.log 2>&1 < /dev/null &"
+bash -c "cd services/chat-gateway && env $pg_env $common_env $internal_env $upload_env $fcm_env MEDIA_SVC_URL=http://127.0.0.1:8004 setsid nohup $repo_root/.venv/bin/uvicorn dcc_chat_gateway.app:app --host 127.0.0.1 --port 8002 --ws-max-size 65536 --reload > /tmp/dcc-chat.log 2>&1 < /dev/null &"
 
 # voice-signaling (8003) — braucht INTERNAL_SERVICE_SECRET, damit der
 # participant_left-Webhook den chat-gateway-Revoke-Endpoint authentifiziert

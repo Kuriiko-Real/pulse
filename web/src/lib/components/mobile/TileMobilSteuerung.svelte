@@ -10,6 +10,15 @@
   der schlimmste Verlust: blockiert Chromium die Wiedergabe, ist er die einzige
   Abhilfe, und ohne ihn bleibt der Stream für immer stumm.
 
+  **Die vier Ecken halten seit dem 2026-10-08 Abstand zur Aussparung**
+  (`--safe-left`/`--safe-right`, angelegt mit dieser Änderung). Vorher stand
+  dort nur `left-2`/`right-2`, und das genügte, solange die iOS-Hülle auf
+  Hochformat gelockt war — im Hochformat sind links und rechts null. Mit dem
+  Querformat fürs Stream-Vollbild (Punkt 27) wandert die Aussparung an eine
+  Seite, und genau dort sitzen Schliessen, Lautstärke und Vollbild-Ausstieg.
+  Oben und unten bleiben bei `top-2`/`bottom-2`: im Querformat sind sie klein,
+  und im Hochformat liegt die Kachel nicht am Bildrand.
+
   Eine Komponente für beide Lagen (Kachel und Vollbild) statt zweier Zweige:
   die Knöpfe sind dieselben, nur das Ausblenden nach Ruhe (`fadeClass`) und der
   Vollbild-Ausstieg unterscheiden sich.
@@ -24,6 +33,7 @@
   import MessageSquareIcon from '@lucide/svelte/icons/message-square';
   import ListVideoIcon from '@lucide/svelte/icons/list-video';
   import { m } from '$lib/paraglide/messages.js';
+  import BildImBildKnopf from '$lib/stream/components/BildImBildKnopf.svelte';
 
   let {
     testidPrefix,
@@ -44,7 +54,9 @@
     queueOpen = false,
     onToggleQueue,
     onHide,
-    onToggleFullscreen
+    onToggleFullscreen,
+    /** Das Video der Kachel — für das System-Bild-in-Bild. */
+    video = null
   }: {
     testidPrefix: string;
     isFullscreen?: boolean;
@@ -62,6 +74,7 @@
     onToggleQueue?: () => void;
     onHide?: () => void;
     onToggleFullscreen: () => void;
+    video?: HTMLVideoElement | null;
   } = $props();
 
   // Am Handy wird die Lautstärke IMMER auf 5er gerastert — angezeigt UND
@@ -79,7 +92,8 @@
 {#if isFullscreen ? zeigeVollbildAus : !!onHide}
   <button
     type="button"
-    class="absolute top-2 left-2 z-30 {RUND} {fadeClass}"
+    class="absolute top-2 z-30 {RUND} {fadeClass}"
+    style="left: calc(0.5rem + var(--safe-left))"
     onclick={() => (isFullscreen ? onToggleFullscreen() : onHide?.())}
     aria-label={isFullscreen ? m.tile_shell_fullscreen_exit() : m.tile_shell_hide_tile()}
     data-pip-hide
@@ -93,9 +107,14 @@
 
 <!-- Oben rechts: die Seitenpanel-Schalter. Sie sind die einzige Möglichkeit,
      die Overlays für Chat und Warteschlange am Telefon zu öffnen — ohne sie
-     ist deren Markup toter Code. -->
-{#if onToggleChat || onToggleQueue}
-  <div class="absolute top-2 right-2 z-30 flex items-center gap-2 {fadeClass}">
+     ist deren Markup toter Code. Davor das System-Bild-in-Bild, das sich
+     selbst ausblendet, wo es nicht trägt. -->
+{#if onToggleChat || onToggleQueue || video}
+  <div
+    class="absolute top-2 z-30 flex items-center gap-2 {fadeClass}"
+    style="right: calc(0.5rem + var(--safe-right))"
+  >
+    <BildImBildKnopf {video} klasse={RUND} pipHide testid={`${testidPrefix}-pip-float`} />
     {#if onToggleQueue}
       <button
         type="button"
@@ -128,7 +147,8 @@
 {#if !isFullscreen}
   <button
     type="button"
-    class="absolute right-2 bottom-2 z-20 {RUND}"
+    class="absolute bottom-2 z-20 {RUND}"
+    style="right: calc(0.5rem + var(--safe-right))"
     onclick={onToggleFullscreen}
     aria-label={m.tile_shell_fullscreen_enter()}
     data-pip-hide
@@ -143,7 +163,10 @@
      als Lautsprecher IN der Pille: sie ist der einzige Weg zurück, wenn man
      die Lautstärke auf 0 gezogen hat. -->
 {#if hatLautstaerke}
-  <div class="absolute bottom-2 left-2 z-30 {fadeClass}">
+  <div
+    class="absolute bottom-2 z-30 {fadeClass}"
+    style="left: calc(0.5rem + var(--safe-left))"
+  >
     <div
       class="flex items-center gap-0.5 rounded-full bg-black/45 px-1 text-white backdrop-blur-sm"
       data-pip-hide

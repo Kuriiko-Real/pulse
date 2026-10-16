@@ -26,6 +26,7 @@ import {
   folgeNachFehler,
   istAbspielAbbruch,
   spieleAb,
+  spieltBinnen,
   startAudioAbbruchfest,
 } from '../src/lib/audio/abspielen.ts';
 
@@ -240,7 +241,8 @@ describe('Verdrahtung: jeder Raum wird VOR connect() abgesichert', () => {
 
   for (const datei of [
     'src/lib/voice/livekit.svelte.ts',
-    'src/lib/anrufe/anruf.svelte.ts',
+    // Der Web-Anrufraum liegt seit feat/ios in `webAnrufRaum.ts`.
+    'src/lib/anrufe/webAnrufRaum.ts',
     'src/lib/gast/gastRaum.svelte.ts',
   ]) {
     test(`${datei}`, () => {
@@ -257,6 +259,22 @@ describe('Verdrahtung: jeder Raum wird VOR connect() abgesichert', () => {
   test('eigene play()-Aufrufe ohne Fänger laufen über spieleAb', () => {
     assert.match(lies('src/lib/components/message/AudioNachricht.svelte'), /void spieleAb\(audio\)/);
     assert.match(lies('src/lib/components/mobile/KameraOverlay.svelte'), /void spieleAb\(vorschau\)/);
-    assert.match(lies('src/lib/voice/audioElements.ts'), /spieleAb\(anchor\)\.catch\(\(\) => onBlocked\(\)\)/);
+    assert.match(lies('src/lib/voice/audioElements.ts'), /spieleAb\(anchor\)\.catch\(/);
+  });
+});
+
+describe('spieltBinnen: ein hängendes play() hält den Knopf nicht fest', () => {
+  test('aufgelöst → spielt, abgelehnt → spielt nicht', async () => {
+    assert.equal(await spieltBinnen(Promise.resolve(), 50), true);
+    assert.equal(await spieltBinnen(Promise.reject(new Error('NotAllowedError')), 50), false);
+  });
+
+  test('offen nach der Frist → gilt als nicht abgelehnt', async () => {
+    assert.equal(await spieltBinnen(new Promise(() => {}), 10), true);
+  });
+
+  test('ein Abbruch über spieleAb ist keine Sperre', async () => {
+    const el = { play: () => Promise.reject(Object.assign(new Error('x'), { name: 'AbortError' })) };
+    assert.equal(await spieltBinnen(spieleAb(el), 50), true);
   });
 });

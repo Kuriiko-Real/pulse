@@ -1650,3 +1650,73 @@ async def test_klartextkanal_wird_nicht_zum_postfach_ziel(
     async with session_factory() as s:
         assert (await s.execute(select(DmNutzlast))).scalars().all() == []
         assert (await s.execute(select(DmZustellung))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("benachrichtigen", "erwartet"), [(None, 1), (True, 1), (False, 0)])
+async def test_steuer_umschlaege_loesen_keine_mitteilung_aus(
+    client, app, session_factory, _auth_signer, friend_pair, monkeypatch,
+    benachrichtigen, erwartet,
+):
+    """Bughunt 2026-10-11, T11: eine Reaktion, Bearbeitung oder ein
+    Anruf-Schlüssel meldete „Neue Nachricht" und zählte die Plakette am Icon
+    hoch. Der Klient markiert solche Umschläge (``benachrichtigen: false``);
+    ein älterer Klient ohne das Feld bleibt beim alten Verhalten."""
+    import dcc_chat_gateway.routes.postfach as postfach_mod
+
+    pushes: list[set[int]] = []
+
+    async def _push(**kwargs):
+        pushes.append(kwargs["recipient_ids"])
+
+    monkeypatch.setattr(postfach_mod, "fan_out_dm_push_encrypted", _push)
+    token_a, uid_a = await _register(_auth_signer)
+    _, uid_b = await _register(_auth_signer)
+    await friend_pair(uid_a, uid_b)
+    dm_id = await _dm_erstellen(client, token_a, uid_b)
+    await _bundel_seeden(session_factory, user_id=uid_b, device_pubkey="empf-still")
+    rumpf = {
+        "channel_id": str(dm_id),
+        "device_pubkey": await _sendegeraet(client, token_a),
+        "nutzlasten": [
+            {"art": 1, "daten": _b64_unpadded(b"reaktion"), "empfaenger": ["empf-still"]}
+        ],
+    }
+    if benachrichtigen is not None:
+        rumpf["benachrichtigen"] = benachrichtigen
+    r = await client.post("/postfach", json=rumpf, headers=_auth(token_a))
+    assert r.status_code == 200, r.text
+    assert r.json()["zustellungen_angelegt"] == 1
+    assert len(pushes) == erwartet
+
+
+@pytest.mark.asyncio
+async def test_ablage_kanal_loest_keinen_dm_push_aus(
+    client, app, session_factory, _auth_signer, monkeypatch
+):
+    """iOS-Bughunt 2, C4: ein Umschlag in einen Ablage-Kanal meldete „Neue
+    Direktnachricht", zählte die Plakette hoch, und der Tipp suchte unter
+    ``/app/@me`` eine DM, die es nicht gibt. Ein Ablage-Kanal ist ein
+    Community-Kanal — kein DM-Push. Zugestellt wird trotzdem."""
+    import dcc_chat_gateway.routes.postfach as postfach_mod
+
+    pushes: list[set[int]] = []
+
+    async def _push(**kwargs):
+        pushes.append(kwargs["recipient_ids"])
+
+    monkeypatch.setattr(postfach_mod, "fan_out_dm_push_encrypted", _push)
+    t_a, _uid_a = await _register(_auth_signer)
+    _t_b, uid_b = await _register(_auth_signer)
+    gid, cid = await _guild_mit_kanal(client, t_a, ablage=True)
+    await _guild_mitglied_hinzufuegen(session_factory, gid, uid_b)
+    pk_b = _make_device()
+    await _bundel_seeden(session_factory, user_id=uid_b, device_pubkey=pk_b)
+
+    r = await _einliefern(
+        client, token=t_a, channel_id=cid,
+        nutzlasten=[{"art": 2, "daten": _b64_unpadded(b"ablage"), "empfaenger": [pk_b]}],
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["zustellungen_angelegt"] == 1
+    assert pushes == []

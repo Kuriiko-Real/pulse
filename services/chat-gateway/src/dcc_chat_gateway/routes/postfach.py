@@ -392,13 +392,24 @@ async def postfach_einliefern(
     # nur offene Tabs. Der Server kennt den Inhalt nie; der Push traegt
     # deshalb weder Nachrichteninhalt noch Dateiname, nur Absender und Kanal
     # (dieselbe Grenze wie beim Klartext-Push). Best-effort — kein ``try``
-    # noetig, ``_fan_out_payload`` faengt selbst jede Ausnahme ab.
-    if push_empfaenger:
+    # noetig, ``_fan_out_payload`` faengt selbst jede Ausnahme ab. Steuer-
+    # Umschlaege (Reaktion, Bearbeitung, Loeschung, Schluessel) markiert der
+    # Klient mit ``benachrichtigen: false`` — sie wecken niemanden und zaehlen
+    # die Plakette am Icon nicht hoch (Begruendung am Feld in ``schemas.py``).
+    # Ein Ablage-Kanal bekommt KEINEN Push (iOS-Bughunt 2, C4): er kam als
+    # „Neue Direktnachricht" an, zählte die Plakette hoch, und der Tipp fand unter
+    # ``/app/@me`` keine DM. Ob er eine eigene Mitteilung bekommen soll, ist
+    # eine Produktfrage. Der Weckruf oben bleibt.
+    if push_empfaenger and body.benachrichtigen and not zugriff.ist_ablage:
         await fan_out_dm_push_encrypted(
             recipient_ids=push_empfaenger,
             author_name=user.username,
             channel_id=cid_int,
             manager=getattr(request.app.state, "connection_manager", None),
+            # Der Server weiss, DASS Anhänge dranhängen (die Kennungen hat der
+            # Klient oben mitgeschickt und sie sind gegen den Kanal geprüft) —
+            # nie, was drin ist. Genau diese Grenze trägt der Mitteilungstext.
+            hat_anhang=bool(anhang_ids),
         )
 
     return PostfachEinliefernResponse(

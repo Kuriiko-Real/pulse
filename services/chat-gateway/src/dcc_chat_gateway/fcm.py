@@ -1,8 +1,9 @@
 """FCM-Push (Firebase Cloud Messaging) für die Android-App (Übergabe P0.1).
 
 Ein inhaltsfreier Benachrichtigungskanal neben dem Web-Push aus
-:mod:`dcc_chat_gateway.push`: eine neue DM an einen Empfänger OHNE offene
-WebSocket-Verbindung wird als Systemmeldung auf dem Android-Gerät sichtbar.
+:mod:`dcc_chat_gateway.push`: eine neue DM wird als Systemmeldung auf dem
+Telefon sichtbar — auf iOS immer, auf Android nur ohne offene
+WebSocket-Verbindung (wer bekommt was: :mod:`dcc_chat_gateway.fcm_empfaenger`).
 Die Nutzlast trägt deshalb nur Absendername und Kanalkennung — niemals
 Nachrichtentext (derselbe Riegel wie ``fan_out_dm_push_encrypted``).
 
@@ -24,13 +25,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, select
 
+from dcc_chat_gateway import badgezaehler
 from dcc_chat_gateway.config import get_settings
 from dcc_chat_gateway.db import SessionLocal
+from dcc_chat_gateway.fcm_empfaenger import empfangende_geraete, ios_geraete
 from dcc_chat_gateway.models import FcmToken
+
+# Nur für die Typangabe von ``_build_dm_message``: zur Laufzeit lädt diese
+# Zeile nichts — ``firebase_admin`` wird erst beim ersten Senden importiert
+# (s. Modulkopf).
+if TYPE_CHECKING:
+    from firebase_admin import messaging
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +52,28 @@ ANDROID_CHANNEL_ID = "messages"
 #: DMs: soll) den Klartext nicht kennen, also steht hier nie mehr als die
 #: Kategorie.
 DM_BODY = "Neue Nachricht"
+
+#: Mitteilungs-Kategorie für DMs. Sie verbindet die Meldung mit den Aktionen,
+#: die die App registriert hat (`AppDelegate.swift` — „Antworten" mit
+#: Eingabefeld). Der Bezeichner muss dort WORTGLEICH stehen; passt er nicht,
+#: zeigt iOS die Meldung ohne Aktionen an — ohne jeden Fehler.
+DM_KATEGORIE = "dm"
+
+#: Dasselbe, wenn ein Anhang dranhängt (Eigentümer-Entscheid 2026-10-08).
+#: Der Server WEISS das — die Bezugszeilen (``dm_anhang_bezuege``) stehen in
+#: seiner Datenbank —, und nur das sagt dieser Text. Kein Dateiname, keine
+#: Art, keine Grösse: die hat er auch gar nicht entschlüsselt vorliegen.
+#: Der Preis ist bewusst in Kauf genommen und klein: Apple und der Server
+#: erfahren, DASS diese eine Nachricht einen Anhang trug.
+DM_BODY_ANHANG = "Hat dir einen Anhang geschickt"
+
+
+def dm_body(hat_anhang: bool) -> str:
+    """Der Mitteilungstext für eine DM. Eigene Funktion, weil die Entscheidung
+    an zwei Stellen gleich ausfallen muss (``aps.alert`` für iOS und
+    ``notification`` für Android) — stünden dort verschiedene Texte, sähe
+    dieselbe Nachricht je nach Gerät anders aus."""
+    return DM_BODY_ANHANG if hat_anhang else DM_BODY
 
 #: Initialisierte ``firebase_admin.App`` — Prozess-Singleton, erster Aufruf
 #: gewinnt. ``None`` heisst: nicht konfiguriert oder fehlgeschlagen (kein Push).
@@ -96,7 +127,76 @@ def reset_fcm_cache_for_tests() -> None:
     _FCM_APP = None
 
 
-def _send_one(*, token: str, payload: dict) -> str:
+def _build_dm_message(
+    *, token: str, payload: dict, badge: int | None = None
+) -> messaging.Message:
+    """Baut die FCM-Message für eine DM (Alert + iOS-Sound + Zeitkritisch +
+    Icon-Badge + Android-Kanal + Deep-Link-Daten). Eigenständige Funktion,
+    damit der Test den echten Bau durch den firebase-Encoder schicken kann
+    (Befund 2026-10-06: messaging.ApsSound existierte nicht — nur ein echter
+    Konstruktions-Test fängt so etwas).
+
+    ``badge`` ist der Ungelesen-Stand des EMPFÄNGERS (s. ``badgezaehler``).
+    ``None`` heisst *schweigen*: das Feld entfällt und die Zahl am Gerät
+    bleibt stehen. Eine ``0`` dagegen räumt die Plakette ab — deshalb darf
+    ein unbekannter Stand niemals als 0 durchgehen.
+    """
+    from firebase_admin import messaging
+
+    # Der FCM-``data``-Block ist String→String. ``payload`` trägt heute nur
+    # Strings; der Filter ist der Riegel dagegen, dass ein künftiges Feld
+    # anderen Typs hineingerät. Einmal gebaut, zweimal verwendet (top-level
+    # und im Android-Block) — die beiden müssen denselben Inhalt tragen.
+    daten = {k: v for k, v in payload.items() if isinstance(v, str)}
+    return messaging.Message(
+        notification=messaging.Notification(
+            title=payload["title"], body=payload["body"]
+        ),
+        token=token,
+        # Deep-Link-Daten TOP-LEVEL, nicht nur im Android-Block: nur so
+        # erreichen sie auch die iOS-Hülle, deren Tap-Handler
+        # `notification.data.channel_id` liest (Befund Review 2026-10-08 —
+        # vorher öffnete ein Push-Tap am iPhone nur die App, nicht den Chat).
+        data=daten,
+        # iOS: eigener Sound (pulse-push.caf im Bundle) + zeitkritisch —
+        # durchbricht Fokus-Modi; das Zeitkritisch-Privileg vergibt der
+        # Nutzer einmalig im Systemdialog.
+        #
+        # **Die Dringlichkeit steht im `aps`-Block, nicht im Kopf.** Bis zum
+        # 2026-10-11 stand hier ein Kopf `apns-interruption-level` — einen
+        # solchen Kopf kennt APNs nicht (die Kopfzeilen sind `apns-push-type`,
+        # `apns-priority`, `apns-expiration`, `apns-topic`, `apns-collapse-id`,
+        # `apns-id`); die Ebene ist ein Feld der Nutzlast,
+        # `aps.interruption-level` (Apple, „Generating a remote
+        # notification"). Der Kopf wurde still übergangen, und keine Meldung
+        # war je zeitkritisch (Bughunt T16). Gefolgert aus der Doku, nicht am
+        # Gerät gemessen.
+        apns=messaging.APNSConfig(
+            headers={"apns-push-type": "alert"},
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(
+                    alert=messaging.ApsAlert(
+                        title=payload["title"], body=payload["body"]
+                    ),
+                    sound="pulse-push.caf",
+                    # Der Encoder lässt None-Felder weg — genau das ist hier
+                    # die Absicht, s. Docstring.
+                    badge=badge,
+                    category=DM_KATEGORIE,
+                    custom_data={"interruption-level": "time-sensitive"},
+                )
+            ),
+        ),
+        # channel_id im data-Block: das ist die Pulse-Kanalkennung für den
+        # Deep-Link des Klienten, nicht der Android-Kanal.
+        android=messaging.AndroidConfig(
+            notification=messaging.AndroidNotification(channel_id=ANDROID_CHANNEL_ID),
+            data=daten,
+        ),
+    )
+
+
+def _send_one(*, token: str, payload: dict, badge: int | None = None) -> str:
     """Ein Sendeversuch. Liefert ``"ok"``, ``"dead"`` oder ``"warn"``.
 
     ``dead`` = Token weg (App deinstalliert, rotiert) → Zeile löschen,
@@ -109,22 +209,7 @@ def _send_one(*, token: str, payload: dict) -> str:
         log.error("firebase_admin nicht installiert; FCM-Push deaktiviert")
         return "warn"
     try:
-        messaging.send(
-            messaging.Message(
-                notification=messaging.Notification(
-                    title=payload["title"], body=payload["body"]
-                ),
-                token=token,
-                # channel_id im data-Block: das ist die Pulse-Kanalkennung für
-                # den Deep-Link des Klienten, nicht der Android-Kanal.
-                android=messaging.AndroidConfig(
-                    notification=messaging.AndroidNotification(
-                        channel_id=ANDROID_CHANNEL_ID
-                    ),
-                    data={k: v for k, v in payload.items() if isinstance(v, str)},
-                ),
-            )
-        )
+        messaging.send(_build_dm_message(token=token, payload=payload, badge=badge))
         return "ok"
     except messaging.UnregisteredError:
         return "dead"
@@ -142,12 +227,14 @@ async def fan_out_fcm_dm_push(
     author_name: str,
     channel_id: int,
     manager: Any | None = None,
+    hat_anhang: bool = False,
 ) -> int:
-    """Inhaltsfreien FCM-Push an offline DM-Empfänger ausliefern.
+    """Inhaltsfreien FCM-Push an die DM-Empfänger ausliefern.
 
-    Offline = keine offene WebSocket-Verbindung: wer online ist, bekommt die
-    Nachricht live über den WS (``dm_bump``), und eine zusätzliche
-    Systemmeldung wäre doppelt. Der Check läuft über
+    Wer einen bekommt, entscheidet :func:`empfangende_geraete`: iOS-Geräte
+    immer, Android-Geräte nur ohne offene WebSocket des Kontos — wer dort
+    online ist, bekommt die Nachricht live über den WS (``dm_bump``), und eine
+    zusätzliche Systemmeldung wäre doppelt. Der Check läuft über
     ``ConnectionManager.user_socket_count``; ohne ``manager`` (Tests, pfad-
     lose Aufrufe) gilt jeder Empfänger als offline.
 
@@ -158,38 +245,47 @@ async def fan_out_fcm_dm_push(
         return 0
     if ensure_fcm() is None:
         return 0
-    if manager is not None:
-        recipient_ids = {
-            uid for uid in recipient_ids if manager.user_socket_count(uid) == 0
-        }
-        if not recipient_ids:
-            return 0
+
+    def wach(uid: int) -> bool:
+        return manager is not None and manager.user_socket_count(uid) > 0
 
     payload = {
         "type": "dm",
         "title": author_name or "Pulse",
-        "body": DM_BODY,
+        "body": dm_body(hat_anhang),
         "channel_id": str(channel_id),
     }
 
     try:
         async with SessionLocal() as session:
-            rows = (
-                (
-                    await session.execute(
-                        select(FcmToken).where(
-                            FcmToken.user_id.in_(list(recipient_ids))
-                        )
-                    )
-                )
-                .scalars()
-                .all()
+            ergebnis = await session.execute(
+                select(FcmToken).where(FcmToken.user_id.in_(list(recipient_ids)))
+            )
+            alle = ergebnis.scalars().all()
+            redis = getattr(manager, "redis", None)
+            rows = empfangende_geraete(
+                alle,
+                ios_geraete=await ios_geraete(session, {r.user_id for r in alle}, redis),
+                wach=wach,
             )
             if not rows:
                 return 0
+            # Icon-Badge: EINMAL je Konto hochzählen, nicht je Gerätezeile —
+            # ein Konto hat einen Ungelesen-Stand, auch wenn Handy und Tablet
+            # beide einen Push bekommen. Ohne Redis (pfadlose Aufrufe, Tests)
+            # bleibt der Stand unbekannt und das Feld entfällt im Push.
+            badges: dict[int, int | None] = {}
+            if redis is not None:
+                for uid in {r.user_id for r in rows}:
+                    badges[uid] = await badgezaehler.erhoehen(redis, uid)
             results = await asyncio.gather(
                 *(
-                    asyncio.to_thread(_send_one, token=r.token, payload=payload)
+                    asyncio.to_thread(
+                        _send_one,
+                        token=r.token,
+                        payload=payload,
+                        badge=badges.get(r.user_id),
+                    )
                     for r in rows
                 ),
                 return_exceptions=True,

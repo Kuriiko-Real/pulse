@@ -32,6 +32,27 @@ function suppressorModul(): Promise<SuppressorModul> {
   return _suppressorModul;
 }
 
+/**
+ * Die Bibliothek im Hintergrund vorladen, sobald dieses Modul geladen ist —
+ * aber nur in einem Secure Context (s. Import-Kommentar: anderswo würde sie
+ * beim Auswerten werfen).
+ *
+ * **Warum vorladen.** Bis zum faulen Import lag die Bibliothek im selben
+ * Chunk wie dieses Modul, war also da, sobald die App lief. Faul geladen kommt
+ * sie erst beim ersten Beitritt — und hat ein Web-Deploy den gehashten Chunk
+ * inzwischen ersetzt, antwortet der Server einer lange offenen App (typisch:
+ * ein Electron-Fenster, das tagelang läuft) mit 404, und der Nutzer spräche
+ * ohne Rauschunterdrückung. Vorgeladen gilt wieder, was vorher galt: der
+ * Chunk kommt mit dem Start. Ein Fehlschlag hier ist still — der Beitritt
+ * versucht es selbst noch einmal (`suppressorModul` cacht keine Ablehnung).
+ */
+function imHintergrundVorladen(): void {
+  if (typeof window === 'undefined' || !window.isSecureContext) return;
+  if (typeof AudioWorkletNode === 'undefined') return;
+  setTimeout(() => void suppressorModul().catch(() => {}), 0);
+}
+imHintergrundVorladen();
+
 /** Tracks AudioContext instances that have had the RNNoise + gate worklet
  *  modules registered, so restart() skips the addModule round-trips when
  *  rebuilding the graph within the same context. */

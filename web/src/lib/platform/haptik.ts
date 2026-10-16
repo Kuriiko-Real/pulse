@@ -1,5 +1,5 @@
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
-import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
+import { isCapacitorIOS } from './runtime';
 
 /**
  * Haptisches Feedback gibt es nur in der Capacitor-Hülle — dort sitzt der
@@ -10,6 +10,8 @@ import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
  * nichts Aufdringliches.
  */
 export function haptikTicken(): void {
-  if (!isCapacitorIOS() && !isCapacitorAndroid()) return;
+  // Nur iOS — Android hatte vorher keinen Tick und behält das
+  // (Eigentümer-Grundsatz 2026-10-16).
+  if (!isCapacitorIOS()) return;
   void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
 }

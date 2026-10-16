@@ -1,6 +1,6 @@
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
-import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
+import { isCapacitorIOS } from './runtime';
 
 /**
  * Externe Links öffnen im System-Browser-Blatt statt im WebView-Fenster.
@@ -12,9 +12,8 @@ import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
  * im SFSafariViewController-Blatt, das eigene Sessions mitbringt (wichtig
  * für Doku- und Anbieter-Logins, die der WebView selbst nicht sehen muss).
  *
- * In Browser und Electron ein No-op: dort arbeiten _blank-Anker wie gehabt.
- * Ebenso in einer Hülle OHNE Browser-Plugin — die ausgelieferten Android-Bauten
- * bringen es nicht mit. Dort darf nichts abgefangen werden: Capacitor schickt
+ * In Browser, Electron und der Android-Hülle ein No-op: dort arbeiten
+ * _blank-Anker wie gehabt. Ebenso in einer Hülle OHNE Browser-Plugin. Dort darf nichts abgefangen werden: Capacitor schickt
  * eine fremde Adresse dann selbst per Intent in den System-Browser
  * (`Bridge.launchIntent`), und genau dieser Weg ginge mit dem
  * `preventDefault` verloren — der Link täte nichts (Bughunt 2026-10-11, T8).
@@ -26,7 +25,12 @@ import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
  * Aufräum-Griff für onDestroy.
  */
 export function installiereExterneLinks(): () => void {
-  if (!isCapacitorIOS() && !isCapacitorAndroid()) return () => undefined;
+  // Nur iOS: in der Android-Hülle gehen Links und Downloads mit
+  // `target=_blank` weiter ihren eigenen Weg (Intent, Download-Manager über
+  // `MainActivity.setDownloadListener`) — sobald ein Android-Bau das
+  // Browser-Plugin mitbringt, lenkte dieser Fang sie sonst in Custom Tabs um
+  // (Eigentümer-Grundsatz 2026-10-16).
+  if (!isCapacitorIOS()) return () => undefined;
   if (!Capacitor.isPluginAvailable('Browser')) return () => undefined;
   const fange = (e: MouseEvent) => {
     const anker = (e.target as Element | null)?.closest?.('a[target="_blank"]');

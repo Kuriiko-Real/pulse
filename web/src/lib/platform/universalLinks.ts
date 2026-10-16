@@ -1,6 +1,6 @@
 import { App } from '@capacitor/app';
 import { vonAussenOeffnen } from '$lib/navigation/navigationsHerkunft';
-import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
+import { isCapacitorIOS } from './runtime';
 import { zielPfad } from './tiefenlink';
 
 /**
@@ -14,12 +14,14 @@ import { zielPfad } from './tiefenlink';
  * Ereignis trägt auch eigene URL-Schemata, und es ist dieselbe Stelle, die
  * später ein QR-Code oder eine Share-Extension füttern würde.
  *
- * Browser und Electron: No-op. Installieren/Rückgabe wie
+ * Browser, Electron und die Android-Hülle: No-op — Android hatte vor der
+ * iOS-Arbeit keinen solchen Hörer und behält das (Eigentümer-Grundsatz
+ * 2026-10-16). Installieren/Rückgabe wie
  * `installiereExterneLinks` — die Rückgabe ist der Aufräum-Griff für
  * `onDestroy`.
  */
 export function installiereUniversalLinks(): () => void {
-  if (!isCapacitorIOS() && !isCapacitorAndroid()) return () => undefined;
+  if (!isCapacitorIOS()) return () => undefined;
   const griff = App.addListener('appUrlOpen', ({ url }) => {
     const ziel = zielPfad(url);
     // Kein erkanntes Ziel: NICHTS tun. Die App ist durch das Ereignis ohnehin

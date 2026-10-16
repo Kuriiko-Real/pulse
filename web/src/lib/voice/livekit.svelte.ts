@@ -47,7 +47,7 @@ import { toast } from 'svelte-sonner';
 import { m } from '$lib/paraglide/messages.js';
 import { acquireWakeLock } from '$lib/platform/wakeLock';
 import { istAblehnung, standMerken } from '$lib/platform/berechtigung.svelte';
-import { isMobile } from '$lib/platform/runtime';
+import { isIosWebKit, isMobile } from '$lib/platform/runtime';
 import { nativerSprachwegBefund } from '$lib/platform/iosSprache';
 import { NativerRaum } from './nativerRaum.svelte';
 import type { NutzerWahl } from './nativAbgleich';
@@ -540,10 +540,11 @@ class VoiceRoom {
     }
 
     this.state = room.state;
-    // Frischer Raum, noch keine fremde Spur — auf Mobil heisst das: nichts ist
-    // gesperrt. LiveKits Urteil gilt hier NICHT, s.
-    // `livekitWiedergabeUebernehmen` in `raumEreignisse.ts`.
-    this.audioBlocked = isMobile() ? false : !room.canPlaybackAudio;
+    // Frischer Raum, noch keine fremde Spur — auf iOS-WebKit heisst das:
+    // nichts ist gesperrt. LiveKits Urteil gilt dort NICHT, s.
+    // `livekitWiedergabeUebernehmen` in `raumEreignisse.ts`. Desktop und
+    // Android wie vorher.
+    this.audioBlocked = isIosWebKit() ? false : !room.canPlaybackAudio;
     voiceState.channelId = channelId;
     voiceState.connected = room.state === ConnectionState.Connected;
     this.#refreshParticipants();
@@ -981,7 +982,7 @@ class VoiceRoom {
    *  (erst danach wartet es auf `Promise.all`), also genuegt es, es ohne
    *  `await` anzustossen und erst spaeter einzusammeln.
    *
-   *  Auf Mobil entscheidet ueber `audioBlocked` das Ergebnis UNSERER Elemente,
+   *  Auf iOS-WebKit entscheidet ueber `audioBlocked` das Ergebnis UNSERER Elemente,
    *  nicht `room.canPlaybackAudio`: dort sind sie der hoerbare Weg, waehrend
    *  LiveKits Zaehlung nur die per `track.attach()` angehaengten SDK-Elemente
    *  umfasst — und die bleiben leer, wir legen eigene an. Ohne diese
@@ -990,9 +991,9 @@ class VoiceRoom {
   async unblockAudio(): Promise<void> {
     const room = this.#room;
     if (!room) return;
-    // Desktop: unverändert wie auf main. Mobil (iOS-Weiche): beide
-    // Startversuche noch in der Geste, Begründung im Doc-Kommentar oben.
-    if (!isMobile()) {
+    // Desktop und Android: unverändert wie vor der iOS-Arbeit. iOS-WebKit:
+    // beide Startversuche noch in der Geste, Begründung im Doc-Kommentar oben.
+    if (!isIosWebKit()) {
       try {
         await room.startAudio();
       } catch {
@@ -1008,7 +1009,11 @@ class VoiceRoom {
     const eigene = this.#audioEls.replayAll();
     await livekit;
     const eigeneSpielen = await eigene;
+    // Überholt, während die Versuche liefen: der Zustand gehört schon einem
+    // anderen Raum (oder keinem mehr).
+    if (room !== this.#room) return;
     this.audioBlocked = !eigeneSpielen;
+    if (eigeneSpielen) this.audioBlockGrund = '';
   }
 
   async setScreenShare(on: boolean): Promise<void> {
@@ -1351,6 +1356,9 @@ class VoiceRoom {
     this.#fensterTon.nachAbbauStoppen();
     this.#screenShare.clear();
     this.audioBlocked = false;
+    // Der Grund gehört zum abgebauten Raum — sonst stünde er beim nächsten
+    // Beitritt unter einer neuen Sperre, die einen anderen hat.
+    this.audioBlockGrund = '';
     voiceState.channelId = null;
     voiceState.connected = false;
   }

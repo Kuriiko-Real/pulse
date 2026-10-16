@@ -16,7 +16,7 @@ test('NotAllowedError ist eine Sperre — ohne zweiten Anlauf', async () => {
   let anlaeufe = 0;
   const gemeldet: string[] = [];
   const anchor = { play: async () => void anlaeufe++ };
-  wiedergabeFehlschlag(anchor, fehler('NotAllowedError'), (g) => gemeldet.push(g));
+  wiedergabeFehlschlag(anchor, fehler('NotAllowedError'), (g) => gemeldet.push(g), true);
   await warten();
   assert.equal(anlaeufe, 0);
   assert.deepEqual(gemeldet, ['NotAllowedError']);
@@ -25,14 +25,24 @@ test('NotAllowedError ist eine Sperre — ohne zweiten Anlauf', async () => {
 test('alles andere bekommt genau einen zweiten Anlauf', async () => {
   const gemeldet: string[] = [];
   let anlaeufe = 0;
-  wiedergabeFehlschlag({ play: async () => void anlaeufe++ }, fehler('AbortError'), (g) => gemeldet.push(g));
+  wiedergabeFehlschlag({ play: async () => void anlaeufe++ }, fehler('AbortError'), (g) => gemeldet.push(g), true);
   await warten();
   assert.equal(anlaeufe, 1);
   assert.deepEqual(gemeldet, [], 'der zweite Anlauf ging durch');
 
   const zweimal: string[] = [];
   const abgelehnt = { play: () => Promise.reject(fehler('NotAllowedError')) };
-  wiedergabeFehlschlag(abgelehnt, fehler('AbortError'), (g) => zweimal.push(g));
+  wiedergabeFehlschlag(abgelehnt, fehler('AbortError'), (g) => zweimal.push(g), true);
   await warten();
   assert.deepEqual(zweimal, ['AbortError → NotAllowedError']);
+});
+
+test('ohne zweiten Anlauf (Android, Mobil-Browser): jede Ablehnung sperrt sofort', async () => {
+  let anlaeufe = 0;
+  const gemeldet: string[] = [];
+  const anchor = { play: async () => void anlaeufe++ };
+  wiedergabeFehlschlag(anchor, fehler('AbortError'), (g) => gemeldet.push(g), false);
+  await warten();
+  assert.equal(anlaeufe, 0);
+  assert.deepEqual(gemeldet, ['AbortError']);
 });

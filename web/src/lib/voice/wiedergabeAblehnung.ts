@@ -24,14 +24,20 @@ export function fehlerName(e: unknown): string {
  * voruebergehend. Erst wenn auch der scheitert, gilt es als Sperre, und der
  * NAME reist mit, damit die naechste Fehlersuche nicht wieder bei null
  * anfaengt.
+ *
+ * **Nur auf iOS-WebKit** (`zweiterAnlauf`, Aufrufer setzt `isIosWebKit()`).
+ * Dort wurde die Ueberholung beobachtet. Android und Mobil-Browser behalten
+ * den Weg von vorher (Eigentümer-Grundsatz 2026-10-16): jede Ablehnung, die
+ * `spieleAb` durchlaesst, sperrt sofort.
  */
 export function wiedergabeFehlschlag(
   anchor: { play(): Promise<void> },
   fehler: unknown,
   onBlocked: (grund: string) => void,
+  zweiterAnlauf: boolean,
 ): void {
   const name = fehlerName(fehler);
-  if (name === 'NotAllowedError') {
+  if (!zweiterAnlauf || name === 'NotAllowedError') {
     onBlocked(name);
     return;
   }

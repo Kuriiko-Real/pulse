@@ -136,3 +136,39 @@ export function startAudioAbbruchfest(raum: {
       () => raum.state !== 'disconnected'
     );
 }
+
+/** So lange darf ein `play()` offen bleiben, bevor es als „nicht abgelehnt"
+ *  gilt (`spieltBinnen`). Gesetzt, nicht gemessen. */
+export const WIEDERGABE_FRIST_MS = 1500;
+
+/**
+ * Wurde dieser Wiedergabe-Versuch NICHT abgelehnt? — ohne an einem hängenden
+ * `play()` festzuhalten.
+ *
+ * **Warum eine Frist.** Ein `play()` auf einem `MediaStream` löst erst auf,
+ * wenn die Wiedergabe wirklich beginnt; kommen (noch) keine Daten, bleibt es
+ * offen. Wer darauf wartet, bevor er `audioBlocked` setzt, lässt den
+ * „Ton aktivieren"-Knopf stehen, obwohl der Klick gewirkt hat. Eine
+ * Autoplay-Sperre dagegen lehnt sofort ab — deshalb gilt ein nach der Frist
+ * noch offenes `play()` als „spielt", ein abgelehntes als „spielt nicht".
+ * Ein Abbruch (`AbortError`) ist keine Sperre: der Aufrufer reicht dafür
+ * `spieleAb(...)` herein, das ihn schluckt.
+ */
+export function spieltBinnen(
+  versuch: Promise<unknown>,
+  fristMs: number = WIEDERGABE_FRIST_MS
+): Promise<boolean> {
+  return new Promise<boolean>((loesen) => {
+    const uhr = setTimeout(() => loesen(true), fristMs);
+    versuch.then(
+      () => {
+        clearTimeout(uhr);
+        loesen(true);
+      },
+      () => {
+        clearTimeout(uhr);
+        loesen(false);
+      }
+    );
+  });
+}

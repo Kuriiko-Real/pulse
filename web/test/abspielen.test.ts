@@ -26,6 +26,7 @@ import {
   folgeNachFehler,
   istAbspielAbbruch,
   spieleAb,
+  spieltBinnen,
   startAudioAbbruchfest,
 } from '../src/lib/audio/abspielen.ts';
 
@@ -259,5 +260,21 @@ describe('Verdrahtung: jeder Raum wird VOR connect() abgesichert', () => {
     assert.match(lies('src/lib/components/message/AudioNachricht.svelte'), /void spieleAb\(audio\)/);
     assert.match(lies('src/lib/components/mobile/KameraOverlay.svelte'), /void spieleAb\(vorschau\)/);
     assert.match(lies('src/lib/voice/audioElements.ts'), /spieleAb\(anchor\)\.catch\(/);
+  });
+});
+
+describe('spieltBinnen: ein hängendes play() hält den Knopf nicht fest', () => {
+  test('aufgelöst → spielt, abgelehnt → spielt nicht', async () => {
+    assert.equal(await spieltBinnen(Promise.resolve(), 50), true);
+    assert.equal(await spieltBinnen(Promise.reject(new Error('NotAllowedError')), 50), false);
+  });
+
+  test('offen nach der Frist → gilt als nicht abgelehnt', async () => {
+    assert.equal(await spieltBinnen(new Promise(() => {}), 10), true);
+  });
+
+  test('ein Abbruch über spieleAb ist keine Sperre', async () => {
+    const el = { play: () => Promise.reject(Object.assign(new Error('x'), { name: 'AbortError' })) };
+    assert.equal(await spieltBinnen(spieleAb(el), 50), true);
   });
 });

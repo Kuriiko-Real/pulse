@@ -2,7 +2,8 @@ import type { RemoteAudioTrack } from 'livekit-client';
 import { isMobile } from '$lib/platform/runtime';
 import type { SpatialMode } from '$lib/stores/settings.svelte';
 import { applySinkId } from '$lib/audio/applySinkId';
-import { spieleAb } from '$lib/audio/abspielen';
+import { spieleAb, spieltBinnen } from '$lib/audio/abspielen';
+import { isIosWebKit } from '$lib/platform/runtime';
 import type { SpatialLayout } from './spatial/layout';
 import { loadResonance } from './spatial/resonanceLoader';
 import { SpatialScene, resolveQuality } from './spatial/spatialScene';
@@ -167,7 +168,7 @@ export class RemoteAudioElements {
       // schluckt den `AbortError`; was sonst scheitert, deutet
       // `wiedergabeFehlschlag` (nur `NotAllowedError` sperrt sofort).
       void spieleAb(anchor).catch((fehler: unknown) =>
-        wiedergabeFehlschlag(anchor, fehler, onBlocked)
+        wiedergabeFehlschlag(anchor, fehler, onBlocked, isIosWebKit())
       );
       return;
     }
@@ -311,12 +312,9 @@ export class RemoteAudioElements {
     if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
     const laeufe: Promise<boolean>[] = [];
     for (const node of this.#nodes.values()) {
-      laeufe.push(
-        node.anchor
-          .play()
-          .then(() => true)
-          .catch(() => false)
-      );
+      // Ein Abbruch ist keine Sperre (`spieleAb`), und ein hängendes `play()`
+      // hält das Ergebnis nicht fest (`spieltBinnen`).
+      laeufe.push(spieltBinnen(spieleAb(node.anchor)));
     }
     return Promise.all(laeufe).then((r) => r.every(Boolean));
   }

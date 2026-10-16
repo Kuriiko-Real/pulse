@@ -25,7 +25,7 @@ import type { RemoteAudioElements } from './audioElements';
 import type { RemoteSpeakingTracker } from './remoteSpeakingTracker';
 import { userIdFromIdentity } from './identity';
 import { melde } from '$lib/diagnose/app-diagnose';
-import { isMobile } from '$lib/platform/runtime';
+import { isIosWebKit } from '$lib/platform/runtime';
 
 /** Die öffentlichen Felder des Stores, die die Handler lesen oder schreiben. */
 export interface RaumWirt {
@@ -150,6 +150,10 @@ export function raumVerdrahten(room: Room, wirt: RaumWirt, haken: RaumHaken): vo
             userIdFromIdentity(p.identity) ?? p.identity,
             (grund) => {
               wirt.audioBlocked = true;
+              // Grund und Beleg nur auf iOS-WebKit — dort fiel der Fehler an,
+              // und nur dort wurden sie gebaut. Desktop und Android zeigen die
+              // Ueberlagerung wie vorher, ohne Rohtext (Grundsatz 2026-10-16).
+              if (!isIosWebKit()) return;
               wirt.audioBlockGrund = grund;
               // Ins Kaefer-Gedaechtnis, nicht nur in die Konsole: am Telefon
               // ist die Konsole nur ueber ein Kabel und Safari erreichbar,
@@ -225,9 +229,12 @@ export function raumVerdrahten(room: Room, wirt: RaumWirt, haken: RaumHaken): vo
  *
  * Dort entscheidet allein der Rueckruf aus `tonElemente.attach()` (oben bei
  * `TrackSubscribed`) — der einzige, der den hoerbaren Weg wirklich beobachtet.
+ * Belegt ist das fuer iOS; Android behaelt deshalb den Weg von vorher.
  */
 function livekitWiedergabeUebernehmen(wirt: RaumWirt, room: Room): void {
-  if (isMobile()) return;
+  // Nur iOS-WebKit ist ausgenommen (dort gemessen); Android und Mobil-Browser
+  // uebernehmen LiveKits Urteil wie vorher (Grundsatz 2026-10-16).
+  if (isIosWebKit()) return;
   // Läuft nur aus einem Handler, der `lebt(room)` geprüft hat — `room` ist
   // also der Raum, den der Store unter `#room` hält.
   wirt.audioBlocked = !room.canPlaybackAudio;

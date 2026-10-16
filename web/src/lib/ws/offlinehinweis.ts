@@ -6,7 +6,8 @@
  * Desktop-only — auf Handy und Tablet sagte nichts, dass die Liste stillsteht,
  * weil die Verbindung weg ist. Weiss blieb weiss.
  *
- * **Vier Regeln, und drei davon sind Zurückhaltung:**
+ * **Vier Regeln, und drei davon sind Zurückhaltung** (dazu der schlafende
+ * Heim-Server, `serverSchlaeft` — ein Sonderfall von Regel 1):
  *
  *  1. Zustände mit eigenem Handlungsbedarf bekommen KEINEN generischen
  *     Hinweis. „Server zu alt", „gesperrt", „E-Mail nicht bestätigt",
@@ -61,13 +62,21 @@ export interface Hinweislage {
   netzOnline: boolean;
   /** Wie lange der aktuelle Zustand schon anliegt. */
   seitMs: number;
+  /** Ist der maßgebliche Server ein messbar schlafender Heim-Server
+   *  (`appHostAnwesenheit.schlaeft`)? Dafür gibt es eine eigene Anzeige — die
+   *  gedimmte Sektion in der `GuildRail` und der Schlaf-Hinweis im Kanal —,
+   *  und „keine Verbindung" wäre dieselbe falsche Diagnose wie bei Regel 1. */
+  serverSchlaeft: boolean;
 }
 
 export function offlineHinweis(lage: Hinweislage): Hinweis {
   if (!lage.gewuenscht) return 'keiner';
   if (lage.zustand === 'open') return 'keiner';
   if (EIGENE_ANZEIGE.includes(lage.zustand)) return 'keiner';
+  // Das Gerät selbst offline: das ist die Ursache, auch vor einem
+  // schlafenden Server (dessen Anwesenheit dann ohnehin niemand misst).
   if (!lage.netzOnline) return 'offline';
+  if (lage.serverSchlaeft) return 'keiner';
   if (lage.seitMs < GEDULD_MS) return 'keiner';
   return lage.zustand === 'connecting' ? 'verbindet' : 'offline';
 }

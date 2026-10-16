@@ -32,6 +32,10 @@
   sich ja gerade nicht geändert. Das ist die unangenehme Sorte Fehler: der Wert
   ist richtig gerechnet und wird nur nie neu gerechnet.
 
+  **Klicks gehen durch** (`pointer-events-none`, Eigentümer-Entscheid
+  2026-10-16): der Streifen liegt über der Kopfzeile und den Knöpfen darin —
+  er sagt etwas, er nimmt nichts weg.
+
   Keine Geräteklassen-Abfrage: der Streifen gilt überall gleich, die Oberkante
   folgt der Aussparung über `--safe-area-inset-top` (die Hülle füllt die
   Variable, s. `AppDelegate.injectSafeAreaInsets`).
@@ -41,6 +45,8 @@
   import WifiOffIcon from '@lucide/svelte/icons/wifi-off';
   import { m } from '$lib/paraglide/messages.js';
   import { activeServer } from '$lib/stores/active-server.svelte';
+  import { serversStore } from '$lib/api/servers.svelte';
+  import { appHostAnwesenheit } from '$lib/stores/appHostAnwesenheit.svelte';
   import { GEDULD_MS, offlineHinweis } from '$lib/ws/offlinehinweis';
   import { serverState } from '$lib/ws/server-state.svelte';
 
@@ -65,6 +71,16 @@
   });
 
   const stand = $derived(serverState.get(activeServer.serverId));
+  /** Derselbe Schlaf-Begriff wie die gedimmte Sektion in der `GuildRail`. */
+  const serverSchlaeft = $derived.by(() => {
+    const eintrag = serversStore.find(activeServer.serverId);
+    return (
+      !!eintrag &&
+      !eintrag.isCloud &&
+      eintrag.origin === 'app_host' &&
+      appHostAnwesenheit.schlaeft(eintrag.instance_id)
+    );
+  });
 
   const hinweis = $derived.by(() => {
     void anstoss;
@@ -72,7 +88,8 @@
       gewuenscht: stand.gewollt,
       zustand: stand.state,
       netzOnline,
-      seitMs: Date.now() - stand.seit
+      seitMs: Date.now() - stand.seit,
+      serverSchlaeft
     });
   });
 
@@ -89,7 +106,7 @@
 
 {#if hinweis !== 'keiner'}
   <div
-    class="fixed top-0 right-0 left-0 z-50 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white shadow-lg {farbe}"
+    class="pointer-events-none fixed top-0 right-0 left-0 z-50 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white shadow-lg {farbe}"
     style="padding-top: calc(0.5rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))"
     role="status"
     aria-live="polite"

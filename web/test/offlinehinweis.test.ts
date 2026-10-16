@@ -12,6 +12,7 @@ const lage = (teil: Partial<Hinweislage> = {}): Hinweislage => ({
   zustand: 'closed',
   netzOnline: true,
   seitMs: 60_000,
+  serverSchlaeft: false,
   ...teil
 });
 
@@ -58,4 +59,19 @@ test('die Uhr zaehlt den Abriss, nicht den Zustandswechsel', () => {
   // nur die Aussage. Mit einer Uhr am Zustandswechsel waere hier 'keiner'
   // herausgekommen — rot, dann nichts, dann gelb.
   assert.equal(offlineHinweis(lage({ zustand: 'connecting', seitMs: 10_000 })), 'verbindet');
+});
+
+// Eigentümer-Entscheid 2026-10-16: ein schlafender Heim-Server hat seine
+// eigene Anzeige (gedimmte Sektion, Schlaf-Hinweis im Kanal).
+test('schlafender Heim-Server: kein roter Streifen — ausser das Geraet ist selbst offline', () => {
+  assert.equal(offlineHinweis(lage({ serverSchlaeft: true })), 'keiner');
+  assert.equal(offlineHinweis(lage({ serverSchlaeft: true, zustand: 'connecting' })), 'keiner');
+  assert.equal(offlineHinweis(lage({ serverSchlaeft: true, netzOnline: false })), 'offline');
+});
+
+test('gesperrt, zu alt, im Update: eigene Anzeige, kein Streifen', () => {
+  for (const z of ['suspended', 'incompatible', 'updating']) {
+    assert.ok(EIGENE_ANZEIGE.includes(z), z);
+    assert.equal(offlineHinweis(lage({ zustand: z })), 'keiner', z);
+  }
 });

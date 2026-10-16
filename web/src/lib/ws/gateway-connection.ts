@@ -1043,11 +1043,14 @@ export class GatewayConnection {
    * Absicht: ein Server, der uns mit 4044/4045/4070 aktiv abweist, soll sich
    * weiter bis 300 s auseinanderstaffeln (Bughunt Runde 43, Begründung an
    * `this.attempt = 0`). Ein wiedergekehrtes Netz bekommt EINEN sofortigen
-   * Versuch — nicht eine neue Leiter.
+   * Versuch — nicht eine neue Leiter. Und nach einer solchen Abweisung gar
+   * keinen: dort wartet die Weckprüfung auf die Staffel
+   * (`wachentscheid.ts::ABWEISENDE_ZUSTAENDE`).
    */
   wachPruefen(): void {
     const befund = wachEntscheid({
       gewuenscht: this.wantConnected,
+      zustand: this.state,
       bereit: this.ws ? this.ws.readyState : null,
       pruefungLaeuft: this.wachFrist !== null,
       seitLetzterPruefungMs: Date.now() - this.letzteWachPruefung

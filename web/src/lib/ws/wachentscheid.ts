@@ -38,7 +38,8 @@ export const GESCHLOSSEN = 3;
 export const MINDESTABSTAND_MS = 1000;
 
 export type Wachbefund =
-  /** Nichts tun: unerwünscht, zu früh, oder ein Versuch läuft schon. */
+  /** Nichts tun: unerwünscht, abgewiesen, zu früh, oder ein Versuch läuft
+   *  schon. */
   | 'nichts'
   /** Es gibt keinen brauchbaren Socket — jetzt verbinden, ohne auf die
    *  nächste Backoff-Stufe zu warten. */
@@ -46,9 +47,22 @@ export type Wachbefund =
   /** Socket ist offen, aber womöglich tot — Ping mit kurzer Frist. */
   | 'ping-pruefen';
 
+/**
+ * Zustände, in denen der Server uns AKTIV abgewiesen hat: zu alt (4044), im
+ * Update (4045), gesperrt (4070). Dort zählt die Staffelung bis 300 s, und
+ * ein Weckanlass darf sie nicht überspringen — sonst klopfte jedes
+ * Entsperren, jeder Tab-Wechsel und jeder Netzwechsel sofort wieder an
+ * (Bughunt Runde 43, s. `gateway-connection.ts::wachPruefen`). Die
+ * Oberfläche zeigt für sie ohnehin ihre eigene Anzeige
+ * (`offlinehinweis.ts::EIGENE_ANZEIGE`).
+ */
+export const ABWEISENDE_ZUSTAENDE: readonly string[] = ['incompatible', 'updating', 'suspended'];
+
 export interface Wachlage {
   /** Will der Klient überhaupt verbunden sein? Nach einem Abmelden nicht. */
   gewuenscht: boolean;
+  /** `ConnectionState` der Verbindung (`gateway-connection.ts`). */
+  zustand: string;
   /** `readyState` des Sockets, oder `null` wenn gar keiner da ist. */
   bereit: number | null;
   /** Läuft bereits eine Ping-Prüfung mit Frist? */
@@ -59,6 +73,7 @@ export interface Wachlage {
 
 export function wachEntscheid(lage: Wachlage): Wachbefund {
   if (!lage.gewuenscht) return 'nichts';
+  if (ABWEISENDE_ZUSTAENDE.includes(lage.zustand)) return 'nichts';
   if (lage.seitLetzterPruefungMs < MINDESTABSTAND_MS) return 'nichts';
   // Kein Socket, oder einer im Abbau: der Abbau endet in `close` und damit im
   // gestaffelten Reconnect — darauf warten wir nicht. Die Verbindung hängt

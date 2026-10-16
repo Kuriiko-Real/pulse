@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { WS_WACH_FRIST_MS } from '../src/lib/api/constants.ts';
 import {
+  ABWEISENDE_ZUSTAENDE,
   GESCHLOSSEN,
   MINDESTABSTAND_MS,
   OFFEN,
@@ -14,6 +15,7 @@ import {
 
 const lage = (teil: Partial<Wachlage> = {}): Wachlage => ({
   gewuenscht: true,
+  zustand: 'closed',
   bereit: GESCHLOSSEN,
   pruefungLaeuft: false,
   seitLetzterPruefungMs: 60_000,
@@ -74,4 +76,15 @@ test('nach dem Schliessen eines toten Sockets wählt die Weckprüfung sofort neu
     'utf8'
   );
   assert.match(quelle, /ws\.close\(\);[\s\S]*?\}\s*\/\/[\s\S]*?this\.wachPruefen\(\);\s*\}, WS_WACH_FRIST_MS\);/);
+});
+
+// Fixliste 16 (2026-10-16): eine aktive Abweisung behält ihre Staffel.
+test('zu alt, im Update, gesperrt: kein Sofortversuch, die Staffel gilt', () => {
+  for (const zustand of ['incompatible', 'updating', 'suspended']) {
+    assert.ok(ABWEISENDE_ZUSTAENDE.includes(zustand), zustand);
+    assert.equal(wachEntscheid(lage({ zustand, bereit: null })), 'nichts', zustand);
+    assert.equal(wachEntscheid(lage({ zustand, bereit: GESCHLOSSEN })), 'nichts', zustand);
+  }
+  // Ein gewöhnlicher Abriss bekommt ihn weiter.
+  assert.equal(wachEntscheid(lage({ zustand: 'closed', bereit: null })), 'sofort-verbinden');
 });

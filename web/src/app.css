@@ -221,10 +221,15 @@
   html,
   body {
     height: 100%;
-    /* App-Shell statt Webseite: kein Gummiband/Pull-to-Refresh am Root —
-       Scrollen gehört den inneren Listen (overflow-y-auto). In der iOS-Hülle
-       zusätzlich per ios.scrollEnabled=false native gesichert; das hier deckt
-       Browser- und PWA-Kontexte ab (iOS Safari 16+, Android Chrome). */
+  }
+
+  /* App-Shell statt Webseite: kein Gummiband am Root — Scrollen gehört den
+     inneren Listen (overflow-y-auto). NUR in der iOS-Hülle (`data-huelle`,
+     gesetzt in `routes/+layout.svelte`; dort zusätzlich nativ per
+     ios.scrollEnabled=false): im Browser nähme es die Zurück-Geste am Mac
+     und Pull-to-Refresh in Android-Chrome weg. */
+  :root[data-huelle='ios'],
+  :root[data-huelle='ios'] body {
     overscroll-behavior: none;
   }
 

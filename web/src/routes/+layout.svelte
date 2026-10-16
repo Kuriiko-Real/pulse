@@ -18,7 +18,7 @@
   import { serversStore } from '$lib/api/servers.svelte';
   import { activeServer } from '$lib/stores/active-server.svelte';
   import { initSelfHostReauth } from '$lib/api/self-host-reauth';
-  import { isElectron } from '$lib/platform/runtime';
+  import { isCapacitorIOS, isElectron } from '$lib/platform/runtime';
   import {
     checkNativeUpdate,
     nativeUpdateAlreadySeen,
@@ -61,6 +61,9 @@
   // Woher jede Navigation kam (Tipp in der App, von aussen, Zurück) — die
   // Kanal-Route tritt nur bei einem Tipp in der App bei (`navigation/herkunft.ts`).
   navigationsHerkunftVerfolgen();
+  // iOS-Hülle am <html> markiert — für CSS, das nur dort gilt (`app.css`,
+  // `overscroll-behavior`). Browser, Electron und Android bleiben unmarkiert.
+  if (isCapacitorIOS()) document.documentElement.dataset.huelle = 'ios';
 
   let { children } = $props();
 

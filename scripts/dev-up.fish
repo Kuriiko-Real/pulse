@@ -93,7 +93,7 @@ end
 # --- Container --------------------------------------------------------------
 
 # macOS: LiveKit und MediaMTX laufen nur mit den Aufsätzen `*.mac.yml`
-# (docs/dev-macos.md) — Host-Networking meint auf Docker Desktop die Linux-VM.
+# (intern/docs/dev-macos.md) — Host-Networking meint auf Docker Desktop die Linux-VM.
 # Ohne sie stellte jeder Lauf hier die Container auf die Haupt-Datei zurück,
 # und Sprachkanal und Übertragungen waren wieder tot (iOS-Bughunt 2, E5).
 # Ein Aufruf für beide Projekte: die Dateinamen gelten im jeweiligen

@@ -57,7 +57,7 @@ fi
 # davor lag das Developer-ID-Zertifikat in einem gesperrten, eigenen
 # `pulse-build.keychain-db` VOR dem Anmelde-Bund im Suchpfad. Wer „Developer
 # ID" bevorzugte, griff dorthin und scheiterte mit `errSecInternalComponent`.
-# Voll in `docs/dev-macos.md`.
+# Voll in `intern/docs/dev-macos.md`.
 #
 # Überschreibbar mit PULSE_SIGN_IDENTITY (dann muss der Schlüsselbund mit dem
 # Zertifikat entsperrt sein).

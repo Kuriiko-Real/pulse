@@ -41,7 +41,7 @@ test('D1: ein als „von aussen" angemeldetes Ziel landet als aussen', () => {
   assert.equal(nurPfad('/app'), '/app');
 });
 
-const offen = { startFertig: true, gesperrt: false, imKanal: false };
+const offen = { startFertig: true, gesperrt: false, imKanal: false, iosHuelle: true };
 
 test('S1: die Weiterleitung von /app auf das Auto-Connect-Ziel ist kein Tipp', () => {
   // Bis zur Nachprüfung war das ein blosses `goto` → `app` → die Route trat
@@ -73,6 +73,16 @@ test('F4: hinter der App-Sperre tritt niemand bei, auch nicht nach dem Start', (
   assert.equal(routeBeitritt({ herkunft: 'app', ...offen, gesperrt: true }), 'warten');
   // Eine Landung, die gar nicht beitritt, muss nicht auf das Tor warten.
   assert.equal(routeBeitritt({ herkunft: 'aussen', ...offen, gesperrt: true }), 'nein');
+});
+
+// Eigentümer-Grundsatz 2026-10-16 (Fixliste 19): ausserhalb der iOS-Hülle
+// tritt die Route bei jeder Landung bei, wie vor der iOS-Arbeit.
+test('ausserhalb der iOS-Hülle: jede Landung tritt bei, ohne Tor und ohne Herkunft', () => {
+  const sonst = { ...offen, iosHuelle: false, startFertig: false };
+  for (const herkunft of ['start', 'app', 'aussen', 'zurueck', 'weiterleitung'] as const) {
+    assert.equal(routeBeitritt({ herkunft, ...sonst }), 'ja', herkunft);
+  }
+  assert.equal(routeBeitritt({ herkunft: 'aussen', ...sonst, imKanal: true }), 'nein');
 });
 
 const eintrag = {

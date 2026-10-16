@@ -47,7 +47,15 @@ export function routeBeitritt(z: {
   startFertig: boolean;
   gesperrt: boolean;
   imKanal: boolean;
+  /** Läuft die App in der iOS-Hülle? Nur dort gilt die Regel oben — die
+   *  drei Funde (D1 Universal Link, N1 Neuladen vor dem Abgleich, D2
+   *  Auflegen in der Hülle) sind Hüllen-Fälle. Überall sonst (Android-Hülle,
+   *  Mobil-Browser) bleibt es beim Weg von vorher: jede Landung auf einem
+   *  Sprachkanal tritt bei, sofern man nirgends drin ist
+   *  (Eigentümer-Grundsatz 2026-10-16). */
+  iosHuelle: boolean;
 }): RoutenBeitritt {
+  if (!z.iosHuelle) return z.imKanal ? 'nein' : 'ja';
   if (z.herkunft !== 'app') return 'nein';
   if (z.gesperrt || !z.startFertig) return 'warten';
   if (z.imKanal) return 'nein';

@@ -2,12 +2,14 @@ import { untrack } from 'svelte';
 import type { Herkunft } from '$lib/navigation/herkunft';
 import { navigationsHerkunft } from '$lib/navigation/navigationsHerkunft';
 import { appSperre } from '$lib/platform/appSperre.svelte';
+import { isCapacitorIOS } from '$lib/platform/runtime';
 import { voice } from './livekit.svelte';
 import { routeBeitritt } from './startBeitritt';
 import { startTor } from './startTor.svelte';
 
 /**
- * Der Auto-Beitritt der Kanal-Route am Handy: wer in der App auf einen
+ * Der Auto-Beitritt der Kanal-Route am Handy (die Herkunfts-Regel gilt nur
+ * in der iOS-Hülle, s. `routeBeitritt`): wer in der App auf einen
  * Sprachkanal tippt, sitzt danach darin (eine Vollbild-Seite ohne Verbindung
  * zeigte sonst nur „nicht verbunden"; spiegelt das frühere
  * `VoiceChannelView.onMount`-Auto-Join). Die Entscheidung steht geprüft in
@@ -39,7 +41,8 @@ export function routenBeitrittVerdrahten(kanal: () => { id: string; name: string
       herkunft: landung.herkunft,
       startFertig: startTor.fertig,
       gesperrt: appSperre.gesperrt,
-      imKanal: untrack(() => voice.connected || voice.connecting)
+      imKanal: untrack(() => voice.connected || voice.connecting),
+      iosHuelle: isCapacitorIOS()
     });
     if (antwort === 'warten') return;
     entschieden = ch.id;

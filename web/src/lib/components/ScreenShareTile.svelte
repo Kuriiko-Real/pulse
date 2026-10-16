@@ -13,7 +13,8 @@
   import { voice } from '$lib/voice/livekit.svelte';
   import { VolumeBoost } from '$lib/stream/volumeBoost';
   import { applySinkId } from '$lib/audio/applySinkId';
-  import { isMobile } from '$lib/platform/runtime';
+  import { isIosWebKit } from '$lib/platform/runtime';
+  import { istAbspielAbbruch, spieleAb, spieltBinnen } from '$lib/audio/abspielen';
   import { ankerBefestigen, ankerLoesen } from '$lib/audio/stummerAnker';
   import StreamChatOverlay from '$lib/stream/components/StreamChatOverlay.svelte';
   import StreamChatInlineInput from '$lib/stream/components/StreamChatInlineInput.svelte';
@@ -235,11 +236,10 @@
       // operiert dann auf el.volume, ≤100%) — LiveKit führt es, auch sein Gerät.
       at.attach(el);
       el.muted = false;
-      el.play().catch(() => {
-        // Ohne Zug IST dieses Element der hörbare Weg, und eine abgelehnte
-        // Wiedergabe muss auf Mobil sichtbar werden (iOS blieb sonst stumm,
-        // ohne Knopf und ohne Hinweis). Desktop unverändert: best effort.
-        if (isMobile()) localBlocked = true;
+      el.play().catch((fehler: unknown) => {
+        // Ohne Zug IST dieses Element der hörbare Weg: auf iOS muss eine
+        // Ablehnung (kein Abbruch) sichtbar werden. Sonst best effort.
+        if (isIosWebKit() && !istAbspielAbbruch(fehler)) localBlocked = true;
       });
     }
     applyVolume();
@@ -309,8 +309,8 @@
    * Sprachweg, s. `voice/livekit.svelte.ts::unblockAudio`.
    */
   async function enableAudio() {
-    if (!isMobile()) {
-      // Desktop unverändert: der Ablauf mit `await` verliert dort keine Geste.
+    if (!isIosWebKit()) {
+      // Desktop/Android unverändert: dort verliert `await` keine Geste.
       await voice.unblockAudio();
       try {
         await audioEl?.play();
@@ -322,9 +322,8 @@
       return;
     }
     const stimmen = voice.unblockAudio().catch(() => undefined);
-    const element = (audioEl?.play() ?? Promise.resolve())
-      .then(() => true)
-      .catch(() => false);
+    // Abbruch ist keine Sperre; ein hängendes `play()` hält nicht fest.
+    const element = spieltBinnen(audioEl ? spieleAb(audioEl) : Promise.resolve());
     const verstaerker = (boost?.resume() ?? Promise.resolve()).catch(() => undefined);
     await Promise.all([stimmen, verstaerker]);
     const elementSpielt = await element;

@@ -37,6 +37,8 @@ import { chatApi } from '$lib/api/chat';
 import { isPlayerAvailable } from '$lib/player/client';
 import { settings } from '$lib/stores/settings.svelte';
 import { applySinkId } from '$lib/audio/applySinkId';
+import { spieleAb, spieltBinnen } from '$lib/audio/abspielen';
+import { isIosWebKit } from '$lib/platform/runtime';
 import { m } from '$lib/paraglide/messages.js';
 
 // Retry-Backoff: Publisher evtl. noch nicht online (404) oder transienter
@@ -313,10 +315,22 @@ export class ManagedHqStream {
    * `components/ScreenShareTile.svelte` und `voice/livekit.svelte.ts`.
    */
   async enableAudio(): Promise<void> {
+    if (!isIosWebKit()) {
+      // Desktop und Android: unverändert wie vor der iOS-Arbeit.
+      try {
+        await this.#boost.resume();
+        await this.#audioEl?.play();
+        this.audioBlocked = this.#boost.suspended;
+      } catch {
+        /* still blocked */
+      }
+      return;
+    }
     const kontext = this.#boost.resume().catch(() => undefined);
-    const element = (this.#audioEl?.play() ?? Promise.resolve())
-      .then(() => true)
-      .catch(() => false);
+    // Ein Abbruch ist keine Sperre, und ein hängendes `play()` hält den Knopf
+    // nicht fest (`spieltBinnen`).
+    const audioEl = this.#audioEl;
+    const element = spieltBinnen(audioEl ? spieleAb(audioEl) : Promise.resolve());
     await kontext;
     const elementSpielt = await element;
     // Welcher Weg hoerbar ist, entscheidet, woran die Sperre haengt: mit
@@ -390,12 +404,13 @@ export class ManagedHqStream {
       const el = this.#ensureAudioEl();
       el.srcObject = stream;
       el.muted = false;
-      void el.play().catch(() => {
+      void spieleAb(el).catch(() => {
         // Ohne Web-Audio-Graph IST dieses Element der hoerbare Weg, und eine
-        // abgelehnte Wiedergabe muss sichtbar werden. Vorher stand hier ein
-        // leeres `catch`: auf WebKit blieb die Kachel damit stumm, ohne Knopf
-        // und ohne Hinweis — `audioBlocked` wurde nur im Graph-Zweig gesetzt.
-        this.audioBlocked = true;
+        // abgelehnte Wiedergabe muss auf iOS sichtbar werden. Vorher stand hier
+        // ein leeres `catch`: auf WebKit blieb die Kachel damit stumm, ohne
+        // Knopf und ohne Hinweis. Ein Abbruch ist keine Ablehnung
+        // (`spieleAb`); Desktop und Android bleiben bei best effort.
+        if (isIosWebKit()) this.audioBlocked = true;
       });
     }
     if (this.#videoEl) {

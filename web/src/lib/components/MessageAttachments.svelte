@@ -52,6 +52,9 @@ import { Portal } from 'bits-ui';
   import { formatBytes } from '$lib/utils/formatBytes';
   import { istAnhangAbgelaufenFehler } from '$lib/krypto/anhangAbgelaufen';
   import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
+  import { ladeknopf } from '$lib/platform/speicherWeg';
+  import { isCapacitorIOS } from '$lib/platform/runtime';
+  const iosHuelle = isCapacitorIOS();
 
   let { attachments }: { attachments: Attachment[] } = $props();
 
@@ -543,16 +546,19 @@ import { Portal } from 'bits-ui';
             <RefreshCwIcon class="text-text-muted size-4 shrink-0" />
           </button>
         {:else}
-          <!-- Speichern über die Web-Share-API (iOS-WKWebView hat keinen
-               Download-Manager), Anker-Fallback passiert in
-               `dateiTeilenOderLaden` — s. dort, inkl. Ersatz-Dateinamen. -->
-          <button
-            type="button"
+          <!-- iOS-Hülle: Teilen-Blatt (kein Download-Manager in der WKWebView);
+               sonst der Anker von vorher — Regel in `speicherWeg.ts`. -->
+          {@const lk = ladeknopf(quelleDatei, a.filename, iosHuelle)}
+          <svelte:element
+            this={lk.tag}
+            {...lk.attribute}
             class="bg-bg-input hover:bg-bg-hover flex w-fit max-w-md items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-left text-sm transition-colors"
             data-testid="attachment-download"
-            onclick={() => {
-              if (quelleDatei) void dateiTeilenOderLaden(quelleDatei, a.filename);
-            }}
+            onclick={lk.tag === 'button'
+              ? () => {
+                  if (quelleDatei) void dateiTeilenOderLaden(quelleDatei, a.filename);
+                }
+              : undefined}
           >
             <div class="text-text-muted shrink-0">
               {#if k === 'pdf'}
@@ -574,7 +580,7 @@ import { Portal } from 'bits-ui';
               </p>
             </div>
             <DownloadIcon class="text-text-muted size-4 shrink-0" />
-          </button>
+          </svelte:element>
         {/if}
       {/if}
     {/each}

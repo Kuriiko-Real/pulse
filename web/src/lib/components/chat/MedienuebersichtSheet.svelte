@@ -20,6 +20,10 @@
   import { m } from '$lib/paraglide/messages.js';
   import { formatBytes } from '$lib/utils/formatBytes';
   import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
+  import { ladeknopf } from '$lib/platform/speicherWeg';
+  import { isCapacitorIOS } from '$lib/platform/runtime';
+
+  const iosHuelle = isCapacitorIOS();
 
   let {
     messages,
@@ -134,19 +138,23 @@
                 <span class="text-text-muted block text-2xs">{formatBytes(a.size)}</span>
               </span>
               {#if quelle}
-                <!-- Web-Share statt Anker-Download (iOS-WKWebView hat keinen
-                     Download-Manager) — s. `dateiTeilenOderLaden`. -->
-                <button
-                  type="button"
+                <!-- iOS-Hülle: Teilen-Blatt (kein Download-Manager in der
+                     WKWebView); sonst der Anker von vorher (`speicherWeg.ts`). -->
+                {@const lk = ladeknopf(quelle, a.filename, iosHuelle)}
+                <svelte:element
+                  this={lk.tag}
+                  {...lk.attribute}
                   class="text-primary hover:bg-bg-hover flex size-8 items-center justify-center rounded-full"
                   aria-label={m.medien_datei_laden()}
                   data-testid={`media-file-download-${a.id}`}
-                  onclick={() => {
-                    if (quelle) void dateiTeilenOderLaden(quelle, a.filename);
-                  }}
+                  onclick={lk.tag === 'button'
+                    ? () => {
+                        if (quelle) void dateiTeilenOderLaden(quelle, a.filename);
+                      }
+                    : undefined}
                 >
                   <DownloadIcon class="size-4" />
-                </button>
+                </svelte:element>
               {/if}
             </li>
           {/each}

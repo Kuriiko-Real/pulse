@@ -17,8 +17,47 @@
  * nicht (das wäre ein eigenes natives Plugin). Das war vor 2026-10-06
  * genauso.
  *
- * Importfrei und damit prüfbar (s. die `pnpm test:unit`-Falle in CLAUDE.md).
+ * Prüfbar (s. die `pnpm test:unit`-Falle in CLAUDE.md): der einzige Import
+ * trägt seine Endung und ist selbst importfrei.
  */
+import { dateiNameOderErsatz } from './dateinameErsatz.ts';
+
 export function androidLaedtDirekt(quelle: string): boolean {
   return /^https?:\/\//i.test(quelle);
+}
+
+/**
+ * Wie ein Lade-Knopf für einen Anhang gebaut ist.
+ *
+ * **Nur in der iOS-Hülle ein Knopf**, der über `dateiTeilenOderLaden`
+ * speichert (Teilen-Blatt — die WKWebView hat keinen Download-Manager).
+ * **Überall sonst der Anker von vorher** (`href` + `download` +
+ * `target=_blank`): Desktop, Browser und die Android-Hülle (deren
+ * Download-Manager genau diesen Anker annimmt, s. oben) verhalten sich damit
+ * wie vor der iOS-Arbeit (Eigentümer-Grundsatz 2026-10-16). Ein leerer
+ * Dateiname fällt auf den Ersatz zurück — ohne `download` NAVIGIERTE der
+ * Klick auf eine `blob:`-Adresse (`dateinameErsatz.ts`).
+ */
+export type Ladeknopf =
+  | { tag: 'button'; attribute: { type: 'button' } }
+  | {
+      tag: 'a';
+      attribute: { href: string | undefined; target: '_blank'; rel: string; download: string };
+    };
+
+export function ladeknopf(
+  quelle: string | null | undefined,
+  dateiname: string | null | undefined,
+  iosHuelle: boolean
+): Ladeknopf {
+  if (iosHuelle) return { tag: 'button', attribute: { type: 'button' } };
+  return {
+    tag: 'a',
+    attribute: {
+      href: quelle || undefined,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      download: dateiNameOderErsatz(dateiname)
+    }
+  };
 }

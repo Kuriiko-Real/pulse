@@ -15,6 +15,7 @@
   import { m } from '$lib/paraglide/messages.js';
   import type { Attachment } from '$lib/api/types';
   import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
+  import { isCapacitorIOS } from '$lib/platform/runtime';
   import {
     ZOOM_AUS,
     begrenzeStand,
@@ -45,8 +46,8 @@
 
   /** Speichert das Bild lokal: verschlüsselt über `anhangBlob` (Archiv zuerst,
    *  dann Postfach), Klartext via `fetch` auf die Adresse. Das Speichern selbst
-   *  macht `dateiTeilenOderLaden` — Share-Sheet in der iOS-WKWebView (dort
-   *  funktioniert kein Download-Manager), Anker-Trick auf Desktop. */
+   *  macht in der iOS-Hülle `dateiTeilenOderLaden` (Share-Sheet — dort gibt
+   *  es keinen Download-Manager), überall sonst der Anker-Trick wie vorher. */
   async function herunterladen(): Promise<void> {
     if (laeuft) return;
     laeuft = true;
@@ -69,7 +70,17 @@
       // bisher nach der Frist revoket — die Funktion revoket nur ihre eigene
       // Anker-Adresse im Desktop-Fall, nie eine übergebene.
       const adresse = URL.createObjectURL(blob);
-      await dateiTeilenOderLaden(adresse, filename || 'bild');
+      if (isCapacitorIOS()) {
+        await dateiTeilenOderLaden(adresse, filename || 'bild');
+      } else {
+        // Ausserhalb der iOS-Hülle der Anker-Trick von vorher.
+        const a = document.createElement('a');
+        a.href = adresse;
+        a.download = filename || 'bild';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
       setTimeout(() => URL.revokeObjectURL(adresse), 10_000);
     } catch {
       // `anhangBlob` kann hier sachlich scheitern (z. B. 410 anhang_abgelaufen

@@ -30,6 +30,10 @@
   import { meineAnhaengeApi } from '$lib/api/meineAnhaenge';
   import { chatApi } from '$lib/api/chat';
   import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
+  import { ladeknopf } from '$lib/platform/speicherWeg';
+  import { isCapacitorIOS } from '$lib/platform/runtime';
+
+  const iosHuelle = isCapacitorIOS();
   import type { MedienZeile } from '$lib/verlauf/schema';
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -198,19 +202,23 @@
                 <span class="text-text-muted block text-2xs">{formatBytes(z.size)}</span>
               </span>
               {#if quelle}
-                <!-- Web-Share statt Anker-Download (iOS-WKWebView hat keinen
-                     Download-Manager) — s. `dateiTeilenOderLaden`. -->
-                <button
-                  type="button"
+                <!-- iOS-Hülle: Teilen-Blatt (kein Download-Manager in der
+                     WKWebView); sonst der Anker von vorher (`speicherWeg.ts`). -->
+                {@const lk = ladeknopf(quelle, z.dateiname, iosHuelle)}
+                <svelte:element
+                  this={lk.tag}
+                  {...lk.attribute}
                   class="text-primary hover:bg-bg-hover flex size-8 items-center justify-center rounded-full"
                   aria-label={m.medien_datei_laden()}
                   data-testid={`media-archive-file-download-${z.id}`}
-                  onclick={() => {
-                    if (quelle) void dateiTeilenOderLaden(quelle, z.dateiname);
-                  }}
+                  onclick={lk.tag === 'button'
+                    ? () => {
+                        if (quelle) void dateiTeilenOderLaden(quelle, z.dateiname);
+                      }
+                    : undefined}
                 >
                   <DownloadIcon class="size-4" />
-                </button>
+                </svelte:element>
               {/if}
             </li>
           {/each}

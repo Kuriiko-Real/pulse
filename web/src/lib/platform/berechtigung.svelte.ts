@@ -97,8 +97,9 @@ class Berechtigungsblatt {
   /**
    * Vor dem System-Dialog aufrufen. Löst `true` auf, wenn der Aufrufer den
    * System-Dialog stellen soll — entweder ohne Erklärung (Browser, Electron,
-   * Android-Hülle, Lage schon entschieden) oder weil der Nutzer das Blatt bestätigt hat. `false` heisst
-   * „jetzt NICHT fragen": der Nutzer hat „später" getippt, oder es fehlt der
+   * Android-Hülle, Lage schon entschieden) oder weil der Nutzer das Blatt
+   * bestätigt hat. `false` heisst „jetzt NICHT fragen": der Nutzer hat
+   * „später" getippt, oder es fehlt der
    * Anlass, oder die Erklärung wurde früher schon weggetippt, oder ein anderes
    * Blatt steht gerade offen. Ein `false` darf der Aufrufer nie mit einem
    * Dialog beantworten (Begründung an `berechtigungRegel.ts::Vorgehen`).

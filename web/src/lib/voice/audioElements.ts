@@ -1,9 +1,8 @@
 import type { RemoteAudioTrack } from 'livekit-client';
-import { isMobile } from '$lib/platform/runtime';
+import { isIosWebKit, isMobile } from '$lib/platform/runtime';
 import type { SpatialMode } from '$lib/stores/settings.svelte';
 import { applySinkId } from '$lib/audio/applySinkId';
 import { spieleAb, spieltBinnen } from '$lib/audio/abspielen';
-import { isIosWebKit } from '$lib/platform/runtime';
 import type { SpatialLayout } from './spatial/layout';
 import { loadResonance } from './spatial/resonanceLoader';
 import { SpatialScene, resolveQuality } from './spatial/spatialScene';

@@ -74,8 +74,9 @@ export function skalaFuerKategorie(kategorie: string | null | undefined): number
  * (Browser, Electron, Android) stünde sonst ein fest gesetztes `100%` am
  * `<html>`, das dort vorher nicht stand — und mobile Browser lesen die
  * Eigenschaft für ihre eigene Schrift-Anpassung (aus der Doku gefolgert,
- * nicht gemessen; Eigentümer-Grundsatz 2026-10-16). Mit Kategorie dagegen immer ein Wert, auch `100%`: ein
- * Zurückstellen auf „normal" muss eine vorherige Vergrößerung zurücknehmen.
+ * nicht gemessen; Eigentümer-Grundsatz 2026-10-16). Mit Kategorie dagegen
+ * immer ein Wert, auch `100%`: ein Zurückstellen auf „normal" muss eine
+ * vorherige Vergrößerung zurücknehmen.
  */
 export function textGroessenAnpassung(kategorie: string | null | undefined): string | null {
   if (kategorie === null || kategorie === undefined) return null;

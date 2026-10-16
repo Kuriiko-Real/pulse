@@ -19,6 +19,7 @@
   import BottomSheet from './BottomSheet.svelte';
   import AutoRefreshImage from '$lib/components/AutoRefreshImage.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
+  import AnhangLadeknopf from '$lib/components/AnhangLadeknopf.svelte';
   import FileIcon from '@lucide/svelte/icons/file';
   import DownloadIcon from '@lucide/svelte/icons/download';
   import { m } from '$lib/paraglide/messages.js';
@@ -29,11 +30,6 @@
   import { medienNachziehen } from '$lib/verlauf/medienNachzug';
   import { meineAnhaengeApi } from '$lib/api/meineAnhaenge';
   import { chatApi } from '$lib/api/chat';
-  import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
-  import { ladeknopf } from '$lib/platform/speicherWeg';
-  import { isCapacitorIOS } from '$lib/platform/runtime';
-
-  const iosHuelle = isCapacitorIOS();
   import type { MedienZeile } from '$lib/verlauf/schema';
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -202,23 +198,15 @@
                 <span class="text-text-muted block text-2xs">{formatBytes(z.size)}</span>
               </span>
               {#if quelle}
-                <!-- iOS-Hülle: Teilen-Blatt (kein Download-Manager in der
-                     WKWebView); sonst der Anker von vorher (`speicherWeg.ts`). -->
-                {@const lk = ladeknopf(quelle, z.dateiname, iosHuelle)}
-                <svelte:element
-                  this={lk.tag}
-                  {...lk.attribute}
+                <AnhangLadeknopf
+                  {quelle}
+                  dateiname={z.dateiname}
                   class="text-primary hover:bg-bg-hover flex size-8 items-center justify-center rounded-full"
                   aria-label={m.medien_datei_laden()}
                   data-testid={`media-archive-file-download-${z.id}`}
-                  onclick={lk.tag === 'button'
-                    ? () => {
-                        if (quelle) void dateiTeilenOderLaden(quelle, z.dateiname);
-                      }
-                    : undefined}
                 >
                   <DownloadIcon class="size-4" />
-                </svelte:element>
+                </AnhangLadeknopf>
               {/if}
             </li>
           {/each}

@@ -32,6 +32,7 @@
   import type { Attachment } from '$lib/api/types';
   import AutoRefreshImage from './AutoRefreshImage.svelte';
   import Lightbox from './Lightbox.svelte';
+  import AnhangLadeknopf from './AnhangLadeknopf.svelte';
   import AudioNachricht from './message/AudioNachricht.svelte';
   import FileIcon from '@lucide/svelte/icons/file';
   import FileTextIcon from '@lucide/svelte/icons/file-text';
@@ -51,10 +52,6 @@ import { Portal } from 'bits-ui';
   import { m } from '$lib/paraglide/messages.js';
   import { formatBytes } from '$lib/utils/formatBytes';
   import { istAnhangAbgelaufenFehler } from '$lib/krypto/anhangAbgelaufen';
-  import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
-  import { ladeknopf } from '$lib/platform/speicherWeg';
-  import { isCapacitorIOS } from '$lib/platform/runtime';
-  const iosHuelle = isCapacitorIOS();
 
   let { attachments }: { attachments: Attachment[] } = $props();
 
@@ -546,19 +543,11 @@ import { Portal } from 'bits-ui';
             <RefreshCwIcon class="text-text-muted size-4 shrink-0" />
           </button>
         {:else}
-          <!-- iOS-Hülle: Teilen-Blatt (kein Download-Manager in der WKWebView);
-               sonst der Anker von vorher — Regel in `speicherWeg.ts`. -->
-          {@const lk = ladeknopf(quelleDatei, a.filename, iosHuelle)}
-          <svelte:element
-            this={lk.tag}
-            {...lk.attribute}
+          <AnhangLadeknopf
+            quelle={quelleDatei}
+            dateiname={a.filename}
             class="bg-bg-input hover:bg-bg-hover flex w-fit max-w-md items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-left text-sm transition-colors"
             data-testid="attachment-download"
-            onclick={lk.tag === 'button'
-              ? () => {
-                  if (quelleDatei) void dateiTeilenOderLaden(quelleDatei, a.filename);
-                }
-              : undefined}
           >
             <div class="text-text-muted shrink-0">
               {#if k === 'pdf'}
@@ -580,7 +569,7 @@ import { Portal } from 'bits-ui';
               </p>
             </div>
             <DownloadIcon class="text-text-muted size-4 shrink-0" />
-          </svelte:element>
+          </AnhangLadeknopf>
         {/if}
       {/if}
     {/each}

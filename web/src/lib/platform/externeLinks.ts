@@ -13,10 +13,11 @@ import { isCapacitorIOS } from './runtime';
  * für Doku- und Anbieter-Logins, die der WebView selbst nicht sehen muss).
  *
  * In Browser, Electron und der Android-Hülle ein No-op: dort arbeiten
- * _blank-Anker wie gehabt. Ebenso in einer Hülle OHNE Browser-Plugin. Dort darf nichts abgefangen werden: Capacitor schickt
- * eine fremde Adresse dann selbst per Intent in den System-Browser
- * (`Bridge.launchIntent`), und genau dieser Weg ginge mit dem
- * `preventDefault` verloren — der Link täte nichts (Bughunt 2026-10-11, T8).
+ * _blank-Anker wie gehabt. Ebenso in einer Hülle OHNE Browser-Plugin: ohne
+ * Plugin gibt es kein Blatt, und das `preventDefault` nähme dem Link trotzdem
+ * seinen eigenen Weg. Gefunden an Android, wo Capacitor eine fremde Adresse
+ * dann selbst per Intent in den System-Browser schickt
+ * (`Bridge.launchIntent`) — der Link tat nichts (Bughunt 2026-10-11, T8).
  * Gefragt wird `isPluginAvailable`: es liest die Kopfzeilen, die allein die
  * Hülle einspielt (`Capacitor.PluginHeaders`). `Capacitor.Plugins.Browser`
  * taugt dafür nicht — den Eintrag schreibt `registerPlugin` beim Import des

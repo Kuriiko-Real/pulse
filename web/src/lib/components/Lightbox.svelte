@@ -17,10 +17,7 @@
   import { dateiTeilenOderLaden } from '$lib/platform/dateiTeilen';
   import { isCapacitorIOS } from '$lib/platform/runtime';
   import {
-    ZOOM_AUS,
-    begrenzeStand,
-    doppeltippStand,
-    pinchStand,
+    ZOOM_AUS, begrenzeStand, bildNimmtZeiger, doppeltippStand, pinchStand, zaehltAlsTipp,
     type Zoomstand
   } from './lightboxZoom';
 
@@ -66,9 +63,7 @@
         blob = antwort.ok ? await antwort.blob() : null;
       }
       if (!blob) return;
-      // Frische Objekt-URL als Brücke zum Blob; sie gehört HIER und wird wie
-      // bisher nach der Frist revoket — die Funktion revoket nur ihre eigene
-      // Anker-Adresse im Desktop-Fall, nie eine übergebene.
+      // Die Objekt-URL gehört HIER und wird nach der Frist revoket.
       const adresse = URL.createObjectURL(blob);
       if (isCapacitorIOS()) {
         await dateiTeilenOderLaden(adresse, filename || 'bild');
@@ -102,6 +97,8 @@
   let pinchBeginn = $state<{ abstand: number; stand: Zoomstand } | null>(null);
   let schiebeVon = $state<{ x: number; y: number; stand: Zoomstand } | null>(null);
   let letzterTipp = 0;
+  /** Ungezoomt ohne Geste: Rechtsklick, Ziehen und Auswahl wie vor dem Zoom. */
+  const bildFrei = $derived(bildNimmtZeiger(zoom, !!(schiebeVon || pinchBeginn)));
 
   /** Punkt relativ zur MITTE der Bildfläche — die Bezugsgröße der Rechnung. */
   function zurMitte(x: number, y: number): { x: number; y: number } {
@@ -116,6 +113,7 @@
   }
 
   function zeigerRunter(e: PointerEvent): void {
+    if (!zaehltAlsTipp(e.button)) return;
     zeiger.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (zeiger.size === 2) {
       const [a, b] = [...zeiger.values()];
@@ -142,8 +140,7 @@
     if (pinchBeginn && zeiger.size === 2) {
       const [a, b] = [...zeiger.values()];
       const abstand = Math.hypot(a.x - b.x, a.y - b.y);
-      // Entartete Geste (beide Finger auf einem Punkt): nichts rechnen, sonst
-      // entsteht ein NaN-Faktor.
+      // Beide Finger auf einem Punkt: nichts rechnen (NaN-Faktor).
       if (pinchBeginn.abstand <= 0) return;
       const m = zurMitte((a.x + b.x) / 2, (a.y + b.y) / 2);
       festzurren(pinchStand(pinchBeginn.stand, abstand / pinchBeginn.abstand, m.x, m.y));
@@ -189,13 +186,15 @@
       </DialogPrimitive.Title>
 
       <!-- Gesten-Fläche. `touch-action: none` ist Pflicht: sonst nimmt der
-           Browser Pinch und Wisch selbst entgegen (Seiten-Zoom, Scroll) und
-           die Pointer-Events kommen nie an. Die Fläche liegt UNTER den
-           Knöpfen (z-Reihenfolge im Markup), damit Schliessen und Speichern
-           bedienbar bleiben. -->
+           Browser Pinch und Wisch selbst (Seiten-Zoom, Scroll). Sie liegt
+           UNTER den Knöpfen, damit Schliessen und Speichern bedienbar bleiben.
+           `select-none`/`pointer-events-none` nur, solange der Zoom die
+           Zeiger braucht (`bildNimmtZeiger`). -->
       <div
         bind:this={flaeche}
-        class="flex h-full w-full touch-none select-none items-center justify-center overflow-hidden"
+        class="flex h-full w-full touch-none items-center justify-center overflow-hidden {bildFrei
+          ? ''
+          : 'select-none'}"
         role="group"
         aria-label={filename ?? m.lightbox_image_preview()}
         onpointerdown={zeigerRunter}
@@ -216,7 +215,7 @@
             {src}
             {alt}
             {anhang}
-            class="pointer-events-none h-full w-full rounded-xl object-contain shadow-2xl"
+            class="h-full w-full rounded-xl object-contain shadow-2xl {bildFrei ? '' : 'pointer-events-none'}"
           />
         </div>
       </div>

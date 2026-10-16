@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  bildNimmtZeiger,
+  zaehltAlsTipp,
 	MAX_SKALA,
 	ZOOM_AUS,
 	begrenzeSkala,
@@ -58,4 +60,17 @@ test('an der Skalen-Grenze wandert die Verschiebung nicht weiter', () => {
 	const s = pinchStand({ skala: 1, dx: 0, dy: 0 }, 10, 100, 0);
 	assert.equal(s.skala, MAX_SKALA);
 	assert.equal(s.dx, 100 - 100 * MAX_SKALA);
+});
+
+// Eigentümer-Entscheid 2026-10-16: ungezoomt verhält sich das Bild wie vorher.
+test('ungezoomt ohne Geste bekommt das Bild die Maus selbst', () => {
+  assert.equal(bildNimmtZeiger({ skala: 1, dx: 0, dy: 0 }, false), true);
+  assert.equal(bildNimmtZeiger({ skala: 1, dx: 0, dy: 0 }, true), false, 'während Pinch');
+  assert.equal(bildNimmtZeiger({ skala: 2, dx: 0, dy: 0 }, false), false, 'gezoomt');
+});
+
+test('nur die Haupttaste zählt als Tipp — ein Rechtsklick nicht', () => {
+  assert.equal(zaehltAlsTipp(0), true);
+  assert.equal(zaehltAlsTipp(2), false);
+  assert.equal(zaehltAlsTipp(1), false);
 });

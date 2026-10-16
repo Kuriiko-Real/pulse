@@ -90,3 +90,24 @@ export function pinchStand(
     dy: my - (my - start.dy) * wirklich
   };
 }
+
+/**
+ * Darf das Bild die Maus selbst bekommen — Rechtsklick „Bild kopieren /
+ * speichern", Bild aus dem Fenster ziehen, Auswahl?
+ *
+ * **Ungezoomt und ohne laufende Geste: ja** (Eigentümer-Entscheid
+ * 2026-10-16). Der Zoom kam mit der iOS-Arbeit auch auf den Desktop, und mit
+ * ihm `pointer-events-none`/`select-none` auf dem Bild — beides nahm dem
+ * Desktop, was er vorher konnte. Gesperrt wird nur, solange der Zoom die
+ * Zeiger braucht: gezoomt (Ziehen verschiebt) oder während Pinch/Schieben.
+ */
+export function bildNimmtZeiger(stand: Zoomstand, gesteLaeuft: boolean): boolean {
+  return stand.skala <= 1 && !gesteLaeuft;
+}
+
+/** Zählt dieser `pointerdown` für Doppeltipp und Schieben? Nur die
+ *  Hauptmaustaste bzw. Finger/Stift (`button === 0`) — ein Rechtsklick ist
+ *  das Kontextmenü, kein halber Doppeltipp. */
+export function zaehltAlsTipp(button: number): boolean {
+  return button === 0;
+}

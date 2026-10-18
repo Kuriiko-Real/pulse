@@ -2,15 +2,22 @@ import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { isCapacitorAndroid } from './runtime';
 
 /**
- * Bridge zum nativen Voice-Motor der APK (docs/UEBERGABE-MOBILE-VOICE-NATIV.md).
+ * Bridge zum nativen Voice-Motor der APK (intern/docs/UEBERGABE-MOBILE-VOICE-NATIV.md).
  * Der native Join trägt den Ton im Anrufkanal (USAGE_VOICE_COMMUNICATION) — am
  * eingebauten Lautsprecher folgt er damit dem Anruf-Regler statt dem
  * Medien-Regler — und nimmt das Mikrofon über das SDK auf.
  *
+ * **Standardmässig an** auf jeder APK (vom Eigentümer getestet und
+ * freigegeben). Notausgang: `localStorage['pulse.nativeVoice'] = '0'`
+ * schaltet zurück auf den Web-Weg.
+ *
  * Version-Skew (Übergabe §5.3): die WebView lädt das Web remote, die APK rollt
- * langsamer. Deshalb doppelt abgesichert — das Opt-in-Flag `pulse.nativeVoice`
- * muss gesetzt sein UND jeder Bridge-Call steckt im try/catch; ein fehlendes
- * oder zu altes Plugin wirft, und der Web-Pfad läuft unverändert weiter.
+ * langsamer. Deshalb steckt jeder Bridge-Aufruf, der ohne eigenen Raum läuft
+ * (Join, Leave, Zustand, Listener, Snapshot, Klang), im try/catch: ein
+ * fehlendes oder zu altes Plugin wirft sofort (Capacitor: UNIMPLEMENTED), und
+ * der Web-Pfad läuft unverändert weiter. Nur `nativeSetMicEnabled` wirft
+ * bewusst weiter (der Aufrufer meldet den Mikrofon-Fehler) — es läuft nur,
+ * solange ein nativer Join steht, das Plugin also da ist.
  *
  * Snapshot-Contract (JSON-String vom nativen 'voice'-Event):
  *   { participants?: [{ identity, name, isLocal, isSpeaking, audioLevel,
@@ -18,7 +25,7 @@ import { isCapacitorAndroid } from './runtime';
  *     state?: 'connected' | 'reconnecting' | 'disconnected' }
  */
 
-/** Teilnehmer-Zeile aus dem nativen Snapshot (roh — Aufbereitung macht die Fassade). */
+/** Teilnehmer-Zeile aus dem nativen Snapshot (roh — Aufbereitung macht `androidMotorSnapshot.ts`). */
 export type NativeParticipantSnapshot = {
   identity: string;
   name: string;
@@ -38,14 +45,21 @@ export type NativeVoiceSnapshot = {
 };
 
 interface NativeVoicePlugin {
+  /** `joinId` kennzeichnet den Raum dieses Joins (der Web-Store reicht seine
+   *  Verbindungs-Generation). APKs vor dem Feld ignorieren es. */
   join(opts: {
     ws_url: string;
     token: string;
     echoCancellation: boolean;
     noiseSuppression: boolean;
     tag: string;
+    joinId: number;
   }): Promise<void>;
-  leave(): Promise<void>;
+  /** Mit `joinId`: nur beenden, wenn der laufende Raum zu diesem Join gehört
+   *  (ein überholter Join reisst sonst den Raum des neueren ab — die Engine
+   *  ist ein Singleton). Ohne: immer beenden (normales Auflegen). APKs vor
+   *  dem Feld beenden in beiden Fällen — das Verhalten von vorher. */
+  leave(opts?: { joinId?: number }): Promise<void>;
   setMicEnabled(opts: { on: boolean }): Promise<void>;
   setDeafened(opts: { on: boolean }): Promise<void>;
   state(): Promise<{ connected: boolean }>;
@@ -61,57 +75,108 @@ const plugin = registerPlugin<NativeVoicePlugin>('Voice');
 
 const FLAG = 'pulse.nativeVoice';
 
-/** Opt-in-Schalter für die Kernprobe — bewusst ein localStorage-Flag, kein
- *  Dauerzustand: der native Pfad ersetzt die Web-Engine komplett. */
-export function nativeVoiceFlagged(): boolean {
+/** Darf der native Weg versucht werden? Auf jeder APK ja, ausser der
+ *  Notausgang `pulse.nativeVoice = '0'` ist gesetzt. Ob das Plugin wirklich
+ *  da ist, entscheidet erst der Bridge-Aufruf (s. Kopfkommentar). */
+export function nativeVoiceErlaubt(): boolean {
   if (!isCapacitorAndroid()) return false;
   try {
-    return localStorage.getItem(FLAG) === '1';
+    return localStorage.getItem(FLAG) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 
-/** true, solange DIESE Web-Session den Ton nativ trägt (nach Reload vergessen
- *  — dafür gibt es den state()-Abgleich in nativeVoiceLeave). */
-let nativeActive = false;
+/** `joinId` des Raums, den die Engine für DIESE Web-Session trägt (`null` =
+ *  keiner; nach einem Reload vergessen — dafür `nativeVoiceWaiseAbbauen`). */
+let aktiveJoinId: number | null = null;
+/** Der zuletzt BEGONNENE Join. Ein älterer, der danach erst auflöst, darf den
+ *  Merker des neueren nicht überschreiben. */
+let letzterJoin: number | null = null;
+
+/** Ergebnis eines nativen Joins:
+ *  - `nativ`: die Engine trägt Ton/Mic jetzt, der Web-Pfad wird übersprungen;
+ *  - `web`: kein (brauchbares) Plugin oder der Join scheiterte — normal weiter
+ *    auf dem Web-Weg;
+ *  - `ueberholt`: ein neuerer Join oder ein Leave hat diesen abgelöst, die
+ *    Engine hat den Raum schon freigegeben. Still aufhören — KEIN Rückfall,
+ *    sonst baute ein überholter `connect()` noch einen Web-Raum auf. */
+export type NativerJoin = 'nativ' | 'web' | 'ueberholt';
+
+/** So weist die Engine einen abgelösten Join ab (`VoiceEngine.kt`). */
+const UEBERHOLT = 'Join überholt';
 
 /** Nativen Join versuchen. `tag` trennt die Konsumenten ('voice' |
- *  'anruf:<id>'). `true` = die Engine trägt Ton/Mic jetzt, der Web-Pfad darf
- *  übersprungen werden; `false` = normal weiter. */
+ *  'anruf:<id>'). */
 export async function nativeVoiceJoin(
   resp: { ws_url: string; token: string },
   echoCancellation: boolean,
   noiseSuppression: boolean,
+  joinId: number,
   tag = 'voice'
-): Promise<boolean> {
-  if (!nativeVoiceFlagged()) return false;
+): Promise<NativerJoin> {
+  if (!nativeVoiceErlaubt()) return 'web';
+  letzterJoin = joinId;
   try {
-    await plugin.join({ ws_url: resp.ws_url, token: resp.token, echoCancellation, noiseSuppression, tag });
-    nativeActive = true;
+    await plugin.join({
+      ws_url: resp.ws_url,
+      token: resp.token,
+      echoCancellation,
+      noiseSuppression,
+      tag,
+      joinId
+    });
+    if (letzterJoin === joinId) aktiveJoinId = joinId;
+    return 'nativ';
+  } catch (e) {
+    if (e instanceof Error && e.message.includes(UEBERHOLT)) return 'ueberholt';
+    console.warn('[nativeVoice] join fehlgeschlagen — Fallback auf Web-Engine', e);
+    return 'web';
+  }
+}
+
+/** Native Engine abmelden.
+ *
+ *  Mit `joinId` (überholter Join): nur genau diesen Raum — Rückgabe `true`.
+ *  Ohne: `true` = sie trug den Ton (oder hielt einen Raum, den diese Session
+ *  noch nicht kannte, etwa einen Join, der gerade erst stand) und räumt jetzt
+ *  ab; `false` = nichts zu tun, der Web-Pfad darf normal weiterlaufen. */
+export async function nativeVoiceLeave(joinId?: number): Promise<boolean> {
+  if (!nativeVoiceErlaubt()) return false;
+  try {
+    if (joinId !== undefined) {
+      if (aktiveJoinId === joinId) aktiveJoinId = null;
+      await plugin.leave({ joinId });
+      return true;
+    }
+    if (aktiveJoinId === null) {
+      const s = await plugin.state();
+      if (!s.connected) return false;
+    }
+    aktiveJoinId = null;
+    await plugin.leave({});
     return true;
   } catch (e) {
-    console.warn('[nativeVoice] join fehlgeschlagen — Fallback auf Web-Engine', e);
+    if (joinId === undefined) aktiveJoinId = null;
+    console.warn('[nativeVoice] leave fehlgeschlagen', e);
     return false;
   }
 }
 
-/** Native Engine abmelden. `true` = sie trug den Ton (oder hält eine Waise aus
- *  einem WebView-Reload — die Engine lebt im APK-Prozess weiter) und räumt
- *  jetzt ab; `false` = nichts zu tun, der Web-Pfad darf normal weiterlaufen. */
-export async function nativeVoiceLeave(): Promise<boolean> {
-  if (!nativeVoiceFlagged()) return false;
+/** Nach einem WebView-Reload: die Engine lebt im APK-Prozess weiter und
+ *  sendet womöglich noch Mikrofon, während die Oberfläche „nicht verbunden"
+ *  zeigt. Hält sie einen Raum, den diese Session nicht kennt, wird er
+ *  abgebaut — sofern `aktuell()` nach der Abfrage noch gilt (kein Beitritt
+ *  inzwischen). Fehlt das Plugin, fällt der Aufruf still durch. */
+export async function nativeVoiceWaiseAbbauen(aktuell: () => boolean): Promise<boolean> {
+  if (!nativeVoiceErlaubt() || aktiveJoinId !== null) return false;
   try {
-    if (!nativeActive) {
-      const s = await plugin.state();
-      if (!s.connected) return false;
-    }
-    nativeActive = false;
-    await plugin.leave();
+    const s = await plugin.state();
+    if (!s.connected || !aktuell() || aktiveJoinId !== null) return false;
+    await plugin.leave({});
     return true;
   } catch (e) {
-    nativeActive = false;
-    console.warn('[nativeVoice] leave fehlgeschlagen', e);
+    console.warn('[nativeVoice] Waisen-Abgleich fehlgeschlagen', e);
     return false;
   }
 }
@@ -119,19 +184,19 @@ export async function nativeVoiceLeave(): Promise<boolean> {
 /** Merker zurücksetzen, wenn die ENGINE sich selbst getrennt hat (Snapshot
  *  state=disconnected) — sonst bliebe die Fassade im native-Modus hängen. */
 export function nativeVoiceReset(): void {
-  nativeActive = false;
+  aktiveJoinId = null;
 }
 
 /** Trägt die native Engine gerade Ton/Mic dieser Session? */
 export function nativeVoiceEngaged(): boolean {
-  return nativeActive;
+  return aktiveJoinId !== null;
 }
 
 /** Snapshot-Listener anhängen (einmal pro Join). */
 export async function nativeVoiceListen(
   cb: (snapshot: NativeVoiceSnapshot) => void
 ): Promise<PluginListenerHandle | null> {
-  if (!nativeVoiceFlagged()) return null;
+  if (!nativeVoiceErlaubt()) return null;
   try {
     return await plugin.addListener('voice', (data) => {
       try {
@@ -153,7 +218,11 @@ export async function nativeSetMicEnabled(on: boolean): Promise<void> {
 
 /** Taub-Schaltung nativ (nur Wiedergabe — Mic-Kopplung macht die Fassade). */
 export async function nativeSetDeafened(on: boolean): Promise<void> {
-  await plugin.setDeafened({ on });
+  try {
+    await plugin.setDeafened({ on });
+  } catch (e) {
+    console.warn('[nativeVoice] setDeafened fehlgeschlagen', e);
+  }
 }
 
 /** voice.*-Klang nativ im Anrufkanal abspielen (SoundPool, siehe P5). */

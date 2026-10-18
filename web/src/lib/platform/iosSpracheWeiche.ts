@@ -94,3 +94,23 @@ export function nativeWacheDa(): boolean {
 export function nativeFunkHqDa(): boolean {
   return nativerSprachwegDa() && huellenBefund('SprachePlugin', SPRACHE_FUNK_HQ_METHODEN).da;
 }
+
+/**
+ * Welcher Weg genommen wurde — und warum — im Speicher festhalten
+ * (`pulse.diag.weiche`; bis 2026-10-18 in `livekit.svelte.ts`, Grössen-Policy).
+ * **Das hat einen Grund.** Am 2026-10-10 liefen vier Messläufe unbemerkt auf
+ * dem damaligen Web-Weg, weil ein vergessener Schalter ihn abgeschaltet hatte;
+ * von aussen sah alles richtig aus, nur die Zahlen gehörten zu etwas anderem.
+ * Seither sagt die App, wofür sie sich entschieden hat (`grund`, bei einem zu
+ * alten Bau samt `fehlen`).
+ */
+export function weicheMerken(weiche: WeichenBefund): void {
+  try {
+    localStorage.setItem(
+      'pulse.diag.weiche',
+      JSON.stringify({ zeit: new Date().toISOString(), ...weiche })
+    );
+  } catch {
+    /* Diagnose darf nie der Grund sein, dass ein Beitritt scheitert. */
+  }
+}

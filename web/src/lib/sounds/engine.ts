@@ -30,6 +30,7 @@ import { guildSounds } from '$lib/stores/guildSounds.svelte';
 import { isIosWebKit } from '$lib/platform/runtime';
 import { iosTonGespielt } from '$lib/diagnose/iosTonDiagnose';
 import { nativeVoiceEngaged, nativePlaySound } from '$lib/platform/nativeVoice';
+import { nativerKlangWeg } from './nativerKlang';
 import { SOUNDS, type SoundId, type SoundCategory } from './registry';
 import { tonEndungen, tonWeg, type TonWeg } from './tonWeg';
 import { WebAudioTon } from './webAudioTon';
@@ -120,16 +121,20 @@ class SoundEngine {
 
   /** Play if the relevant category-toggle is on. Silent no-op otherwise. */
   play(id: SoundId, opts: PlayOpts = {}): void {
-    // Nativer Voice-Motor: die voice.*-Klänge laufen im Anrufkanal (SoundPool
-    // mit Voice-Communication-Usage) — ein <audio>-Element würde im Medien-
-    // Regler landen, genau der Bug, den der Umbau behebt. Ehrliche Grenze:
-    // Guild-Override-URLs und Lautstärke-Stufen spielen nativ nicht — der
-    // SoundPool spielt die gebündelten Defaults (Übergabe P5).
-    if (nativeVoiceEngaged() && id.startsWith('voice.')) {
+    // Android-Sprachmotor: die voice.*-Klänge laufen im Anrufkanal (SoundPool
+    // mit Voice-Communication-Usage), Weg-Entscheidung in `nativerKlang.ts`.
+    // Die Schalter (Gesamt, Kategorie) wirken auch dort — ist der Gain 0,
+    // bleibt es still. Ehrliche Grenze: Lautstärke-Stufen und Guild-Override-
+    // URLs spielen nativ NICHT, der SoundPool spielt die gebündelten Defaults
+    // in voller Lautstärke (Übergabe P5).
+    const gain = categoryGain(SOUNDS[id].category);
+    const weg = nativerKlangWeg(id, nativeVoiceEngaged(), gain);
+    if (weg === 'still') return;
+    if (weg === 'nativ') {
       void nativePlaySound(id);
       return;
     }
-    this.#spiele(id, categoryGain(SOUNDS[id].category), opts);
+    this.#spiele(id, gain, opts);
   }
 
   /** Force-play for settings UI test buttons — respects master + category

@@ -2,6 +2,17 @@
   "_comment": "Pulse-Changelog. Neuester Eintrag zuerst. Wird beim Update-Reload einmalig als nicht-blockierender Toast unten rechts gezeigt, sobald der User eingeloggt ist (siehe web/src/lib/components/ChangelogGate.svelte + ChangelogToast.svelte). Pflege-Regeln: CLAUDE.md → 'Changelog'. Stil pro Eintrag wird vor jedem Push mit dem User abgestimmt. KEINE Emojis, nirgends.",
   "entries": [
     {
+      "id": "2026-10-18.3",
+      "date": "2026-10-18",
+      "style": "Sachlich",
+      "title": "Sprachkanal in der Android-App",
+      "items": [
+        "In der Android-App läuft der Ton im Sprachkanal jetzt wie ein Telefonat: Die Lautstärketasten regeln ihn direkt, auch am eingebauten Lautsprecher.",
+        "Die Klänge beim Betreten, Verlassen und Stummschalten kommen in der Android-App über denselben Weg.",
+        "Im Sprachkanal hebt sich die Kachel der Person, die gerade spricht, farbig ab."
+      ]
+    },
+    {
       "id": "2026-10-18.2",
       "date": "2026-10-18",
       "style": "Sachlich",

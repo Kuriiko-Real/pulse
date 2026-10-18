@@ -196,7 +196,8 @@ test('E6: connect() weicht in der iOS-Hülle nie auf die WebView aus', () => {
   assert.ok(veraltet > 0, 'Prüfung fehlt');
   assert.ok(veraltet < src.indexOf('getVoiceToken(channelId'), 'vor dem Token-Abruf');
   assert.ok(veraltet < src.indexOf('new Room(this.#roomOptions())'), 'vor dem Raum');
-  assert.match(src, /this\.error = m\.voice_ios_app_veraltet\(\);\s*this\.#weicheMerken\(weiche\);\s*throw/);
+  // `weicheMerken` lebt seit 2026-10-18 in `iosSpracheWeiche.ts` (Grössen-Policy).
+  assert.match(src, /this\.error = m\.voice_ios_app_veraltet\(\);\s*weicheMerken\(weiche\);\s*throw/);
   // Die iOS-Session-Schaltung des Web-Sprachwegs ist weg.
   assert.doesNotMatch(src, /tonVoice\('sprachkanal'/);
   assert.doesNotMatch(src, /tonSystemFilterBeobachten/);

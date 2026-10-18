@@ -29,6 +29,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class AudioRoutePlugin extends Plugin {
 
     private AudioDeviceCallback pushCallback;
+    /** Dieselbe Instanz, bei der {@link #pushCallback} hängt: die Callback-
+     *  Liste gehört dem AudioManager-Objekt, abmelden geht nur dort. */
+    private AudioManager pushAudioManager;
 
     /**
      * Geräte-Push: BT/Headset verbindet oder trennt sich → "routesChanged" an
@@ -53,6 +56,19 @@ public class AudioRoutePlugin extends Plugin {
             }
         };
         am.registerAudioDeviceCallback(pushCallback, null);
+        pushAudioManager = am;
+    }
+
+    /** Gegenstück zu {@link #load}: Callback abmelden, sonst hält der
+     *  AudioManager das Plugin (und damit die Bridge) über die Activity hinaus. */
+    @Override
+    protected void handleOnDestroy() {
+        if (pushAudioManager != null && pushCallback != null) {
+            pushAudioManager.unregisterAudioDeviceCallback(pushCallback);
+        }
+        pushAudioManager = null;
+        pushCallback = null;
+        super.handleOnDestroy();
     }
 
     @PluginMethod
@@ -98,10 +114,10 @@ public class AudioRoutePlugin extends Plugin {
             call.reject("audio router unavailable");
             return;
         }
-        String[] cur = aktuellerWeg(r);
+        Weg cur = aktuellerWeg(r);
         JSObject ret = new JSObject();
-        ret.put("current", cur[0]);
-        ret.put("currentDeviceId", Integer.parseInt(cur[1]));
+        ret.put("current", cur.name);
+        ret.put("currentDeviceId", cur.deviceId);
         JSArray devices = new JSArray();
         for (AudioDeviceInfo d : r.listSelectableDevices()) {
             JSObject o = new JSObject();
@@ -114,8 +130,20 @@ public class AudioRoutePlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /** Eine Ausgabewahl: Weg-Name ("speaker", "earpiece", "device", "auto")
+     *  und Geräte-Id (0 = kein festes Gerät). */
+    private static final class Weg {
+        final String name;
+        final int deviceId;
+
+        Weg(String name, int deviceId) {
+            this.name = name;
+            this.deviceId = deviceId;
+        }
+    }
+
     /**
-     * Die AKTUELLE Ausgabewahl als {name, deviceId}: Auf dem nativen
+     * Die AKTUELLE Ausgabewahl: Auf dem nativen
      * Voice-Pfad besitzt das SDK Modus und Weg — der SpeakerphoneRouter wird
      * nicht bedient und sein Stand bleibt auf der letzten Web-Pfad-Wahl
      * stehen ("auto"), obwohl z. B. BT-SCO längst spielt. Solange der Motor
@@ -123,28 +151,22 @@ public class AudioRoutePlugin extends Plugin {
      * (API ≥ S; die Kernprobe-Geräte sind alle ≥ 31); außerhalb des Calls
      * weiter der Router.
      */
-    private String[] aktuellerWeg(SpeakerphoneRouter r) {
-        String current = r.routeName();
-        String deviceId = String.valueOf(r.getRouteDeviceId());
-        if (!VoiceEngine.isConnected()) return new String[] {current, deviceId};
+    private Weg aktuellerWeg(SpeakerphoneRouter r) {
+        Weg router = new Weg(r.routeName(), r.getRouteDeviceId());
+        if (!VoiceEngine.isConnected()) return router;
         AudioManager am = (AudioManager) getActivity()
                 .getSystemService(Context.AUDIO_SERVICE);
         AudioDeviceInfo live = (am != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 ? am.getCommunicationDevice() : null;
-        if (live != null) {
-            int t = live.getType();
-            if (t == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                current = "speaker";
-                deviceId = "0";
-            } else if (t == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
-                current = "earpiece";
-                deviceId = "0";
-            } else {
-                current = "device";
-                deviceId = String.valueOf(live.getId());
-            }
+        if (live == null) return router;
+        switch (live.getType()) {
+            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER:
+                return new Weg("speaker", 0);
+            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE:
+                return new Weg("earpiece", 0);
+            default:
+                return new Weg("device", live.getId());
         }
-        return new String[] {current, deviceId};
     }
 
     /**
@@ -176,7 +198,7 @@ public class AudioRoutePlugin extends Plugin {
     public void getRoute(PluginCall call) {
         SpeakerphoneRouter r = router();
         JSObject ret = new JSObject();
-        ret.put("route", r == null ? "auto" : aktuellerWeg(r)[0]);
+        ret.put("route", r == null ? "auto" : aktuellerWeg(r).name);
         call.resolve(ret);
     }
 

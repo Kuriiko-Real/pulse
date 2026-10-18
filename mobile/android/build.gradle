@@ -9,7 +9,7 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
         classpath 'com.google.gms:google-services:4.4.4'
-        // Native Voice-Motor (docs/UEBERGABE-MOBILE-VOICE-NATIV.md): das
+        // Native Voice-Motor (intern/docs/UEBERGABE-MOBILE-VOICE-NATIV.md): das
         // LiveKit-Android-SDK ist Kotlin-basiert — ein Gradle-Modul (VoiceEngine.kt),
         // der Rest des Projekts bleibt Java.
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20'
@@ -25,8 +25,16 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // LiveKit-SDK zieht seine AudioSwitch-Fork über JitPack (com.github.*).
-        maven { url 'https://jitpack.io' }
+        // LiveKit-SDK 2.29.0 zieht seine AudioSwitch-Fork
+        // (com.github.davidliu:audioswitch) über JitPack — laut dessen POM die
+        // einzige Abhängigkeit, die nicht auf Maven Central liegt. JitPack nur
+        // für diese Gruppe, damit kein anderes Artefakt von dort aufgelöst wird.
+        maven {
+            url 'https://jitpack.io'
+            content {
+                includeGroup 'com.github.davidliu'
+            }
+        }
     }
 }
 

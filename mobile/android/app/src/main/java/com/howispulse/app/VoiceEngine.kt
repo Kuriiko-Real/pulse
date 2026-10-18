@@ -7,7 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
-import com.howispulse.app.R
 import io.livekit.android.LiveKit
 import io.livekit.android.RoomOptions
 import io.livekit.android.events.RoomEvent
@@ -23,6 +22,8 @@ import kotlinx.coroutines.launch
 import livekit.org.webrtc.AudioTrackSink
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteOrder
+import java.util.concurrent.ConcurrentHashMap
 
 /** Rückruf für [VoiceEngine.join]/[VoiceEngine.setMicEnabled] — null bedeutet „erledigt", sonst Fehlermeldung. */
 fun interface JoinCallback {
@@ -35,7 +36,7 @@ fun interface SnapshotListener {
 }
 
 /**
- * Nativer Voice-Motor aus docs/UEBERGABE-MOBILE-VOICE-NATIV.md.
+ * Nativer Voice-Motor aus intern/docs/UEBERGABE-MOBILE-VOICE-NATIV.md.
  *
  * Der springende Punkt ist der „Stempel": das SDK erzeugt seine AudioTracks
  * selbst mit USAGE_VOICE_COMMUNICATION, der Ton folgt damit dem Anruf-Regler —
@@ -45,17 +46,21 @@ fun interface SnapshotListener {
  * Mode/Playout gehören hier dem SDK (AudioSwitch/ModeHandler) — der
  * SpeakerphoneRouter wird auf dem nativen Pfad bewusst NICHT angerufen
  * (Übergabe §5 Punkt 2: ein Eigentümer, sonst Mode-Ping-Pong). Nur der
- * Mic-Foreground-Service wird vom Web separat gestrichelt (AudioRoute.
+ * Mic-Foreground-Service wird vom Web separat geschaltet (AudioRoute.
  * setMicService) — Screen-Lock-Schutz für die Aufnahme.
  *
  * Die UI läuft unverändert im Web: die Engine wirft auf jedes relevante
  * Room-Event einen Teilnehmer-Snapshot an den [SnapshotListener]; das Web
- * schreibt ihn in dieselben Stores wie bisher (#applyNativeSnapshot).
+ * schreibt ihn in dieselben Stores wie bisher (androidMotor.ts).
  *
- * ponytail: Sprech-Indikator/Level kommen serverseitig (ActiveSpeakers +
- * audioLevel) — die Web-Seite nutzt dort ihren eigenen RMS-Detektor, weil
- * Server-Speaker-Daten bei AGC-Aus zappelig sind. Besser erst, wenn sich das
- * Feld meldet; Upgrade-Weg: eigener Level-Tap am Android-Track.
+ * Sprech-Anzeige und Pegel ferner Teilnehmer kommen aus einem eigenen
+ * Abgriff am Android-Track (siehe [trackSinks]), nicht vom Server. Der
+ * lokale Teilnehmer hat keinen solchen Abgriff — siehe [snapshotJson].
+ *
+ * Die Engine ist ein Singleton, das Web kann aber Joins überholen lassen
+ * (neuer Join, bevor der alte fertig ist). Deshalb trägt jeder Raum die
+ * joinId seines Aufrufs ([currentJoinId]); ein leave mit fremder joinId und
+ * der Fehlerpfad eines überholten Joins fassen den neueren Raum nicht an.
  */
 object VoiceEngine {
 
@@ -82,6 +87,11 @@ object VoiceEngine {
     private var room: Room? = null
     private var eventJob: Job? = null
 
+    /** joinId des Aufrufs, dem [room] gehört (null = ohne joinId gejoint).
+     *  Main-Thread-only — join/leave posten beide auf [mainHandler], die
+     *  Reihenfolge der Web-Aufrufe bleibt damit erhalten. */
+    private var currentJoinId: Long? = null
+
     @Volatile
     private var listener: SnapshotListener? = null
 
@@ -89,7 +99,7 @@ object VoiceEngine {
     @Volatile
     private var connected = false
 
-    /** Taub-Schaltung: nur Wiedergabe — alle fernem Audio-Tracks auf Volume 0. */
+    /** Taub-Schaltung: nur Wiedergabe — alle fernen Audio-Tracks auf Volume 0. */
     @Volatile
     private var deafened = false
 
@@ -98,17 +108,17 @@ object VoiceEngine {
      *  Gerät nie an (Nutzerbefund 2026-10-09: kein Sprech-Ring vom PC aus). */
     private val speakers = mutableSetOf<String>()
 
-    /** Subscribed fernem Audio-Tracks (für Deafen). Main-Thread-only. */
+    /** Subscribed ferne Audio-Tracks (für Deafen). Main-Thread-only. */
     private val remoteAudio = mutableSetOf<RemoteAudioTrack>()
 
-    /** Pegel-Tap für die Sprech-Anzeige: je fernem Audio-Track ein
+    /** Pegel-Tap für die Sprech-Anzeige: je fernen Audio-Track ein
      *  AudioTrackSink, der PCM-RMS in [sinkLevels] schreibt (Sink-Thread);
      *  ein 200-ms-Ticker auf dem Main-Thread leitet daraus das Sprech-Set
      *  ab (Schwelle + Nachhall) und emittiert bei Änderung. Serverunabhängig
      *  — der §8-Upgrade-Weg "eigener Level-Tap am Android-Track". */
     private val trackSinks = mutableMapOf<RemoteAudioTrack, Pair<String, AudioTrackSink>>()
-    private val sinkLevels = java.util.concurrent.ConcurrentHashMap<String, Double>()
-    private val lastLoudAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val sinkLevels = ConcurrentHashMap<String, Double>()
+    private val lastLoudAt = ConcurrentHashMap<String, Long>()
     private var levelTicker: Runnable? = null
 
     /** Raum-Etikett aus dem Web ('voice' | 'anruf:<id>') — läuft in jedem
@@ -156,7 +166,8 @@ object VoiceEngine {
 
     /** Join. [echoCancellation]/[noiseSuppression] ersetzen die Web-DSP-Flags
      *  (RNNoise gibt es nativ nicht — Hardware-NS als Ersatz, Übergabe §5.1);
-     *  AGC bleibt wie im Web aus. [done] wird genau einmal gerufen. */
+     *  AGC bleibt wie im Web aus. [joinId] (optional) kennzeichnet den Aufruf,
+     *  siehe [leave]. [done] wird genau einmal gerufen. */
     @JvmStatic
     fun join(
         appContext: Context,
@@ -165,14 +176,17 @@ object VoiceEngine {
         echoCancellation: Boolean,
         noiseSuppression: Boolean,
         roomTag: String,
+        joinId: Long?,
         done: JoinCallback
     ) {
         mainHandler.post {
             try {
                 ensureInit(appContext)
                 // Der WebView-Prozess überlebt einen Reload — ein alter Raum
-                // (Resume nach Refresh) wird zuerst abgerechnet.
+                // (Resume nach Refresh) wird zuerst abgerechnet. Ebenso der
+                // Raum eines noch laufenden, hiermit überholten Joins.
                 leaveInternal()
+                currentJoinId = joinId
                 tag = roomTag
                 val s = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
                     .also { scope = it }
@@ -211,13 +225,9 @@ object VoiceEngine {
                             }
                             is RoomEvent.Reconnecting -> state = "reconnecting"
                             is RoomEvent.Disconnected, is RoomEvent.FailedToConnect -> {
+                                // Abbau erst NACH dem Snapshot unten — der
+                                // trägt so noch die Teilnehmerliste wie bisher.
                                 connected = false
-                                stopLevelTicker()
-                                speakers.clear()
-                                trackSinks.clear()
-                                sinkLevels.clear()
-                                lastLoudAt.clear()
-                                remoteAudio.clear()
                                 state = "disconnected"
                             }
                             is RoomEvent.TrackSubscribed -> {
@@ -249,17 +259,33 @@ object VoiceEngine {
                         }
                         Log.i(TAG, "room event: ${ev::class.simpleName}")
                         listener?.onSnapshot(snapshotJson(state))
+                        // Vom Server/Netz beendeter Raum: wie ein leave
+                        // freigeben (Raum, Pegel-Sinks), sonst hängt er bis
+                        // zum nächsten Join. Nur der eigene Raum — ist er
+                        // schon ersetzt oder per leave abgebaut, ist nichts
+                        // mehr zu tun (kein Doppel-Abbau).
+                        if (state == "disconnected" && room === r) leaveInternal()
                     }
                 }
                 Log.i(TAG, "join")
                 s.launch {
                     try {
                         r.connect(wsUrl, token)
+                        if (room !== r) {
+                            // Während connect() von einem neueren Join oder
+                            // einem leave abgelöst — r ist schon freigegeben.
+                            Log.i(TAG, "join überholt")
+                            done.onResult("Join überholt")
+                            return@launch
+                        }
                         Log.i(TAG, "verbunden")
                         done.onResult(null)
                     } catch (e: Exception) {
                         Log.w(TAG, "join fehlgeschlagen", e)
-                        leaveInternal()
+                        // Nur den EIGENEN Raum abbauen: hat ein neuerer Join
+                        // [room] inzwischen ersetzt, hat dessen leaveInternal()
+                        // r schon freigegeben, und der neue Raum bleibt stehen.
+                        if (room === r) leaveInternal()
                         done.onResult(e.message ?: "Verbindung fehlgeschlagen")
                     }
                 }
@@ -270,18 +296,40 @@ object VoiceEngine {
         }
     }
 
-    /** Raum freigeben — fire-and-forget, auch während eines laufenden Joins ok. */
+    /** Raum freigeben — fire-and-forget, auch während eines laufenden Joins ok.
+     *  Ohne [joinId] wird immer beendet (Normalfall Auflegen). Mit [joinId]
+     *  nur, wenn der aktuelle Raum zu genau diesem Join gehört — das leave
+     *  eines überholten Versuchs reißt den neueren Raum sonst mit ab. */
     @JvmStatic
-    fun leave() {
-        mainHandler.post { leaveInternal() }
+    fun leave(joinId: Long?) {
+        mainHandler.post {
+            if (joinId != null && joinId != currentJoinId) {
+                Log.i(TAG, "leave für überholten Join ignoriert")
+                return@post
+            }
+            leaveInternal()
+        }
     }
 
+    /** Einziger Abbau-Weg (leave, Join-Fehler, Disconnected). Main-Thread-only;
+     *  setzt [room] als Erstes auf null — ein zweiter Aufruf ist ein No-op. */
     private fun leaveInternal() {
         val r = room ?: return
         room = null
+        currentJoinId = null
         eventJob?.cancel()
         eventJob = null
         connected = false
+        stopLevelTicker()
+        trackSinks.forEach { (t, entry) ->
+            try {
+                t.removeSink(entry.second)
+            } catch (_: Exception) {
+            }
+        }
+        trackSinks.clear()
+        sinkLevels.clear()
+        lastLoudAt.clear()
         speakers.clear()
         remoteAudio.clear()
         val s = scope ?: return
@@ -335,11 +383,11 @@ object VoiceEngine {
         Log.i(TAG, "remote volume -> $v (${remoteAudio.size} tracks)")
     }
 
-    /** PCM-Sink für einen fernem Track: RMS je Frame in [sinkLevels], samt
+    /** PCM-Sink für einen fernen Track: RMS je Frame in [sinkLevels], samt
      *  Nachhall-Zeitstempel. Läuft im RTC-Thread — nur die Maps berühren. */
     private fun levelSinkFor(identity: String): AudioTrackSink = AudioTrackSink { buf, _, _, _, _, _ ->
         try {
-            buf.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            buf.order(ByteOrder.LITTLE_ENDIAN)
             buf.rewind()
             var sum = 0.0
             var n = 0
@@ -367,8 +415,8 @@ object VoiceEngine {
                 if (!connected) return
                 val now = SystemClock.elapsedRealtime()
                 val neu = mutableSetOf<String>()
-                for ((id, _) in sinkLevels) {
-                    val laut = (sinkLevels[id] ?: 0.0) > SPEAK_THRESHOLD
+                for ((id, level) in sinkLevels) {
+                    val laut = level > SPEAK_THRESHOLD
                     val nachhall = now - (lastLoudAt[id] ?: 0L) < SPEAK_HANGOVER_MS
                     if (laut || nachhall) neu.add(id)
                 }
@@ -389,7 +437,7 @@ object VoiceEngine {
         levelTicker = null
     }
 
-    /** Tauchschaltung: Wiedergabe aller fernem Tracks stummschalten (Mic koppelt
+    /** Taub-Schaltung: Wiedergabe aller fernen Tracks stummschalten (Mic koppelt
      *  das Web selbst mit). Neue Tracks kommen bei [deafened] direkt stumm an. */
     @JvmStatic
     fun setDeafened(on: Boolean) {
@@ -417,13 +465,13 @@ object VoiceEngine {
 
     /** Snapshot sofort an den Listener werfen — das Web zieht ihn nach dem
      *  Anhängen des Listeners, sonst würde der beim Connect gefeuerte erste
-     *  Snapshot ins Leere laufen (still raum → kein Folge-Event). */
+     *  Snapshot ins Leere laufen (stiller Raum → kein Folge-Event). */
     @JvmStatic
     fun emitSnapshot() {
         mainHandler.post { listener?.onSnapshot(snapshotJson(null)) }
     }
 
-    /** Teilnehmer-Snapshot im Contract von nativeVoice.ts (#applyNativeSnapshot). */
+    /** Teilnehmer-Snapshot im Contract von nativeVoice.ts (Aufbereitung: androidMotorSnapshot.ts). */
     private fun snapshotJson(state: String?): String {
         val root = JSONObject()
         val r = room
@@ -436,9 +484,14 @@ object VoiceEngine {
                 o.put("name", p.name ?: "")
                 o.put("isLocal", isLocal)
                 o.put("isSpeaking", identity in speakers)
-                // SDK-audioLevel bleibt am Gerät 0 (keine Server-Speaker) —
-                // der Pegel-Tap liefert das Level für den UI-Glow: RMS 0..0.125
-                // auf 0..1 gemappt (0.008 = leise Sprache → ~0.06, 0.1 = laut).
+                // Ferne Teilnehmer: Level aus dem eigenen Pegel-Abgriff für den
+                // UI-Glow, RMS 0..0.125 auf 0..1 gemappt (0.008 = leise Sprache
+                // → ~0.06, 0.1 = laut). Der lokale Teilnehmer hat keinen
+                // Abgriff (nur ferne Tracks werden angezapft) und fällt auf
+                // p.audioLevel zurück — das füllt das SDK aus den Sprecher-
+                // Meldungen des Servers, die am Gerät laut Nutzerbefund
+                // 2026-10-09 nicht ankamen; dort steht also meist 0. Ebenso
+                // enthält [speakers] nur ferne Identitäten.
                 val tap = sinkLevels[identity]
                 o.put("audioLevel", if (tap != null) Math.min(1.0, tap * 8) else p.audioLevel.toDouble())
                 o.put("micMuted", !p.isMicrophoneEnabled)

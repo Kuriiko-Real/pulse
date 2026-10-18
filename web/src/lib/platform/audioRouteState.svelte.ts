@@ -1,4 +1,10 @@
-import { listAudioRoutes, setAudioRoute, type AudioRoute, type AudioRouteList } from './audioRoute';
+import {
+  listAudioRoutes,
+  onRoutesChanged,
+  setAudioRoute,
+  type AudioRoute,
+  type AudioRouteList
+} from './audioRoute';
 import { iosWegWechsel } from './iosAudioSession';
 
 /**
@@ -30,10 +36,12 @@ class AudioRouteState {
   #hanger: (() => void) | null = null;
   #amBrowser = false;
   #amSystem = false;
+  #pusher = false;
 
   async aktualisieren(): Promise<void> {
     this.liste = await listAudioRoutes();
     this.#wegWechselHaken();
+    this.#pushHaken();
   }
 
   async festenWegWaehlen(route: AudioRoute): Promise<void> {
@@ -85,6 +93,17 @@ class AudioRouteState {
         void this.aktualisieren();
       }, 300);
     };
+  }
+
+  /** Nativer Push (AudioRoute-Plugin): Geräte-Callback im APK feuert
+   *  "routesChanged". Nötig, weil das WebView-devicechange auf dem nativen
+   *  Voice-Pfad NICHT feuert — sonst zeigte das Route-Icon einen BT-Wechsel
+   *  erst nach dem nächsten Popup-Öffnen (Nutzerbefund 2026-10-09). Drosselt
+   *  über denselben geteilten Hänger wie Browser- und iOS-Quelle. */
+  #pushHaken(): void {
+    if (this.#pusher) return;
+    this.#pusher = true;
+    void onRoutesChanged(() => (this.#hanger ??= this.#drossel())());
   }
 }
 

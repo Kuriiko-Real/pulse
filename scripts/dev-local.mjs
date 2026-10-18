@@ -483,10 +483,14 @@ function garageEinrichten() {
   const res = spawnSync('sh', ['scripts/dev-garage-init.sh'], {
     cwd: REPO,
     stdio: 'ignore',
-    env: dockerEnv()
+    // Git Bash (MSYS) wandelt Slash-Argumente wie `/garage` in Windows-Pfade
+    // (C:/Program Files/Git/garage) — der Bootstrap fände den Daemon nie.
+    // Die Variable schaltet die Konvertierung für den Skriptbaum ab; unter
+    // Linux unbekannt und harmlos (aus dem jules_mobile-Zweig, 2026-10-06).
+    env: { ...dockerEnv(), MSYS_NO_PATHCONV: '1' }
   });
   if (res.status === 0) ok('Garage eingerichtet (Bucket, Schlüssel)');
-  else warn('Garage-Bootstrap scheiterte (sh aus Git for Windows im PATH?) — Anhänge erst nach erneutem Start');
+  else warn('Garage-Bootstrap scheitert (sh aus Git for Windows im PATH?) — Anhänge erst nach erneutem Start');
 }
 
 /** Die Garage-Zugangsdaten, die `dev-garage-init.sh` ablegt — leer, solange es
@@ -723,6 +727,17 @@ async function main() {
   await containersUp(freshEnv);
   runMigrations(freshEnv);
 
+  // Garage-S3-Credentials (GK…-Key aus .garage-dev-credentials, von
+  // dev-garage-init.sh erzeugt) gegen die minioadmin-Defaults der config.py
+  // tauschen — Garage erzwingt das GK-Format (22080a45, wie dev-up.fish
+  // exportiert). Fehlt die Datei, bleiben die Defaults und Anhaenge bleiben
+  // tot — derselbe warn-Kompromiss wie beim Bootstrap oben.
+  let s3Env = {};
+  const gkCreds = readEnvFile(path.join(REPO, '.garage-dev-credentials'));
+  if (gkCreds.GARAGE_S3_KEY && gkCreds.GARAGE_S3_SECRET) {
+    s3Env = { S3_ACCESS_KEY: gkCreds.GARAGE_S3_KEY, S3_SECRET_KEY: gkCreds.GARAGE_S3_SECRET };
+  }
+
   // --- Uvicorns ---
   info('Alte Dienst-Instanzen stoppen (damit --reload sauber neu startet)');
   freePorts([8001, 8002, 8003, 8004, 8005]);
@@ -776,7 +791,7 @@ async function main() {
       CHAT_GATEWAY_URL: 'http://127.0.0.1:8002'
     }],
     ['chat-gateway', 'dcc_chat_gateway.app:app', ['--port', '8002', '--ws-max-size', '65536'], {
-      ...pgEnv, ...commonEnv, ...internalEnv, ...uploadEnv,
+      ...pgEnv, ...commonEnv, ...internalEnv, ...uploadEnv, ...s3Env,
       MEDIA_SVC_URL: 'http://127.0.0.1:8004'
     }],
     ['voice-signaling', 'dcc_voice_signaling.app:app', ['--port', '8003'], {

@@ -1,6 +1,7 @@
 package com.howispulse.app;
 
 import android.content.Context;
+import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.os.Build;
@@ -26,6 +27,49 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  */
 @CapacitorPlugin(name = "AudioRoute")
 public class AudioRoutePlugin extends Plugin {
+
+    private AudioDeviceCallback pushCallback;
+    /** Dieselbe Instanz, bei der {@link #pushCallback} hängt: die Callback-
+     *  Liste gehört dem AudioManager-Objekt, abmelden geht nur dort. */
+    private AudioManager pushAudioManager;
+
+    /**
+     * Geräte-Push: BT/Headset verbindet oder trennt sich → "routesChanged" an
+     * die WebView. Der Web-Store hängt sonst nur an navigator.devicechange,
+     * und das feuert auf dem nativen Voice-Pfad nicht — das Route-Icon
+     * zeigte den Wechsel erst nach dem nächsten Popup-Öffnen.
+     */
+    @Override
+    public void load() {
+        AudioManager am = (AudioManager) getActivity()
+                .getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        pushCallback = new AudioDeviceCallback() {
+            @Override
+            public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
+                notifyListeners("routesChanged", new JSObject());
+            }
+
+            @Override
+            public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+                notifyListeners("routesChanged", new JSObject());
+            }
+        };
+        am.registerAudioDeviceCallback(pushCallback, null);
+        pushAudioManager = am;
+    }
+
+    /** Gegenstück zu {@link #load}: Callback abmelden, sonst hält der
+     *  AudioManager das Plugin (und damit die Bridge) über die Activity hinaus. */
+    @Override
+    protected void handleOnDestroy() {
+        if (pushAudioManager != null && pushCallback != null) {
+            pushAudioManager.unregisterAudioDeviceCallback(pushCallback);
+        }
+        pushAudioManager = null;
+        pushCallback = null;
+        super.handleOnDestroy();
+    }
 
     @PluginMethod
     public void setRoute(PluginCall call) {
@@ -70,9 +114,10 @@ public class AudioRoutePlugin extends Plugin {
             call.reject("audio router unavailable");
             return;
         }
+        Weg cur = aktuellerWeg(r);
         JSObject ret = new JSObject();
-        ret.put("current", r.routeName());
-        ret.put("currentDeviceId", r.getRouteDeviceId());
+        ret.put("current", cur.name);
+        ret.put("currentDeviceId", cur.deviceId);
         JSArray devices = new JSArray();
         for (AudioDeviceInfo d : r.listSelectableDevices()) {
             JSObject o = new JSObject();
@@ -83,6 +128,45 @@ public class AudioRoutePlugin extends Plugin {
         }
         ret.put("devices", devices);
         call.resolve(ret);
+    }
+
+    /** Eine Ausgabewahl: Weg-Name ("speaker", "earpiece", "device", "auto")
+     *  und Geräte-Id (0 = kein festes Gerät). */
+    private static final class Weg {
+        final String name;
+        final int deviceId;
+
+        Weg(String name, int deviceId) {
+            this.name = name;
+            this.deviceId = deviceId;
+        }
+    }
+
+    /**
+     * Die AKTUELLE Ausgabewahl: Auf dem nativen
+     * Voice-Pfad besitzt das SDK Modus und Weg — der SpeakerphoneRouter wird
+     * nicht bedient und sein Stand bleibt auf der letzten Web-Pfad-Wahl
+     * stehen ("auto"), obwohl z. B. BT-SCO längst spielt. Solange der Motor
+     * verbunden ist, gilt darum das live CommunicationDevice des AudioManager
+     * (API ≥ S; die Kernprobe-Geräte sind alle ≥ 31); außerhalb des Calls
+     * weiter der Router.
+     */
+    private Weg aktuellerWeg(SpeakerphoneRouter r) {
+        Weg router = new Weg(r.routeName(), r.getRouteDeviceId());
+        if (!VoiceEngine.isConnected()) return router;
+        AudioManager am = (AudioManager) getActivity()
+                .getSystemService(Context.AUDIO_SERVICE);
+        AudioDeviceInfo live = (am != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                ? am.getCommunicationDevice() : null;
+        if (live == null) return router;
+        switch (live.getType()) {
+            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER:
+                return new Weg("speaker", 0);
+            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE:
+                return new Weg("earpiece", 0);
+            default:
+                return new Weg("device", live.getId());
+        }
     }
 
     /**
@@ -114,8 +198,26 @@ public class AudioRoutePlugin extends Plugin {
     public void getRoute(PluginCall call) {
         SpeakerphoneRouter r = router();
         JSObject ret = new JSObject();
-        ret.put("route", r == null ? "auto" : r.routeName());
+        ret.put("route", r == null ? "auto" : aktuellerWeg(r).name);
         call.resolve(ret);
+    }
+
+    /**
+     * Nur den {@link MicForegroundService} steuern — OHNE den Router
+     * anzufassen. Für den nativen Voice-Motor: dessen SDK besitzt den
+     * Audio-Modus selbst (Übergabe §5.2 — setVoiceActive wäre dort
+     * Mode-Ping-Pong), den Screen-Lock-Schutz für die Aufnahme übernimmt aber
+     * derselbe Service wie im Web-Pfad.
+     */
+    @PluginMethod
+    public void setMicService(PluginCall call) {
+        boolean active = call.getBoolean("active", false);
+        getActivity().runOnUiThread(() -> {
+            if (getActivity() instanceof MainActivity) {
+                ((MainActivity) getActivity()).setMicServiceActive(active);
+            }
+        });
+        call.resolve();
     }
 
     /**
@@ -162,6 +264,12 @@ public class AudioRoutePlugin extends Plugin {
             outs.put(o);
         }
         ret.put("outputDevices", outs);
+
+        // Nativer Voice-Motor (P5/Diagnose): ist die Engine im Raum? Sagt dem
+        // Feld-Log, ob Ton/Mic aktuell über den Anrufkanal laufen.
+        JSObject nv = new JSObject();
+        nv.put("connected", VoiceEngine.isConnected());
+        ret.put("nativeVoice", nv);
 
         call.resolve(ret);
     }

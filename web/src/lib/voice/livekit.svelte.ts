@@ -13,6 +13,7 @@ import type {
 import { getVoiceToken } from '$lib/api/voice';
 import { ApiError } from '$lib/api/client';
 import { voiceState, registerVoiceActions } from './state.svelte';
+import { AndroidMotor } from './androidMotor';
 import { voicePresence } from '$lib/stores/voicePresence.svelte';
 import { watchPartyPresence } from '$lib/stores/watchPartyPresence.svelte';
 import { RemoteAudioElements } from './audioElements';
@@ -48,10 +49,12 @@ import { m } from '$lib/paraglide/messages.js';
 import { acquireWakeLock } from '$lib/platform/wakeLock';
 import { isIosWebKit, isMobile } from '$lib/platform/runtime';
 import { nativerSprachwegBefund, sprachwegVeraltet } from '$lib/platform/iosSprache';
+import { weicheMerken } from '$lib/platform/iosSpracheWeiche';
 import { NativerRaum } from './nativerRaum.svelte';
 import type { NutzerWahl } from './nativAbgleich';
 import type { StartAbgleich } from './startBeitritt';
-import { setVoiceActive, maybeSendAudioDiagnostic } from '$lib/platform/audioRoute';
+import { setVoiceActive, setMicService } from '$lib/platform/audioRoute';
+import { RoutenDiagnose } from '$lib/platform/routenDiagnose';
 import { sidecar } from '$lib/stream/sidecar';
 import { runningStreamSlots } from '$lib/stream/state.svelte';
 
@@ -104,16 +107,21 @@ class VoiceRoom {
   /** Ein laufendes natives Auflegen (B2, `abbauWache.ts`). */
   #nativAbbau = new AbbauWache();
 
-  /** Der native Weg (iOS-Hülle) — eigene Datei, s. `nativerRaum.svelte.ts`.
-   *  Die Haken sind die privaten Stellen dieses Stores, die er braucht. */
-  #nativ = new NativerRaum(this, {
+  /** Die privaten Stellen dieses Stores, die die nativen Wege brauchen. */
+  #haken = {
     melden: () => this.#publishSelfState(),
     abbauen: () => this.#teardown(),
-    vorTaubSetzen: (an) => {
+    vorTaubSetzen: (an: boolean) => {
       this.#micEnabledBeforeDeafen = an;
     },
-    aktuell: (gen) => gen === this.#connectGen
-  });
+    aktuell: (gen: number) => gen === this.#connectGen,
+    adminStumm: () => this.#selfOverride().muted,
+    diagnosePlanen: () => this.#diagnose.planen()
+  };
+  /** Der native Weg (iOS-Hülle) — eigene Datei, s. `nativerRaum.svelte.ts`. */
+  #nativ = new NativerRaum(this, this.#haken);
+  /** Der Android-Sprachmotor (APK) — eigene Datei, s. `androidMotor.ts`. */
+  #motor = new AndroidMotor(this, this.#haken);
 
   /** Läuft dieser Raum nativ (iOS-Hülle)? Treibt die Weichen in der
    *  Oberfläche: dort, wo der Web-Weg eine Videokachel zeichnet, gibt es auf
@@ -286,10 +294,8 @@ class VoiceRoom {
    *  Cleared in #teardown. */
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** One-shot timer for the post-join audio-routing diagnostic (Android). Cleared
-   *  in #teardown so a channel switch within the delay doesn't fire a stale (and
-   *  post-release, misleading) snapshot. */
-  #audioDiagTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Post-join audio-routing diagnostic (Android), `routenDiagnose.ts`. */
+  #diagnose = new RoutenDiagnose();
 
   /** Remote screen-share tracks currently active in the room. */
   get screenTracks(): ScreenShareTrack[] {
@@ -345,23 +351,6 @@ class VoiceRoom {
     return this.state === ConnectionState.Connecting || this.state === ConnectionState.SignalReconnecting;
   }
 
-  /** Welcher Weg genommen wurde — und warum — im Speicher festhalten.
-   *  **Das hat einen Grund.** Am 2026-10-10 liefen vier Messläufe unbemerkt auf
-   *  dem damaligen Web-Weg, weil ein vergessener Schalter ihn abgeschaltet
-   *  hatte; von aussen sah alles richtig aus, nur die Zahlen gehörten zu etwas
-   *  anderem. Seither sagt die App, wofür sie sich entschieden hat (`grund`,
-   *  bei einem zu alten Bau samt `fehlen`; s. `iosSpracheWeiche.ts`). */
-  #weicheMerken(weiche: ReturnType<typeof nativerSprachwegBefund>): void {
-    try {
-      localStorage.setItem(
-        'pulse.diag.weiche',
-        JSON.stringify({ zeit: new Date().toISOString(), ...weiche })
-      );
-    } catch {
-      /* Diagnose darf nie der Grund sein, dass ein Beitritt scheitert. */
-    }
-  }
-
   /** Connect to the LiveKit room backing the given voice channel.
    *  `opts.startMuted` / `opts.startDeafened` lassen den Mic beim Join aus bzw.
    *  starten deafened — genutzt vom Voice-Resume nach einem Reload, um den
@@ -379,7 +368,7 @@ class VoiceRoom {
     const weiche = nativerSprachwegBefund();
     if (sprachwegVeraltet(weiche)) {
       this.error = m.voice_ios_app_veraltet();
-      this.#weicheMerken(weiche);
+      weicheMerken(weiche);
       throw new Error(this.error);
     }
     // Mic state to restore into #micEnabledBeforeDeafen when this connect carries
@@ -395,8 +384,8 @@ class VoiceRoom {
     // ohne das Beenden einer gehosteten Watch-Party und ohne das Überführen
     // von Stumm und Taub in den neuen Kanal (die Hülle trennt den alten Raum
     // in `beitreten` selbst, deshalb fiel es nicht als Abriss auf, sondern nur
-    // als „die Wahl ist weg").
-    if ((this.#room || this.nativ) && (this.connected || this.connecting)) {
+    // als „die Wahl ist weg"). Dasselbe gilt für den Android-Motor.
+    if ((this.#room || this.nativ || this.#motor.traegt) && (this.connected || this.connecting)) {
       if (this.channelId === channelId) return;
       // Channel switch keeps the user's mute/deafen choice (Discord-style) —
       // #teardown resets both, so fold them into opts before disconnecting.
@@ -453,7 +442,7 @@ class VoiceRoom {
     // JS-`Room` auf, den es auf dem nativen Weg nicht gibt. Die Weiche (oben
     // geprüft) sitzt bewusst NACH dem Token-Abruf: die Anmeldung bleibt im Web,
     // nativ bekommt nur `wsUrl` und `token` gereicht.
-    this.#weicheMerken(weiche);
+    weicheMerken(weiche);
     if (weiche.nativ) {
       // `this.micEnabled` wird erst weiter unten gesetzt und trägt hier noch
       // den Stand des vorigen Kanals. Die Absicht steht in `opts`.
@@ -464,6 +453,11 @@ class VoiceRoom {
       });
       return;
     }
+
+    // Android-Motor (`androidMotor.ts`): auf der APK trägt standardmässig die
+    // Engine Ton UND Mikrofon, ohne Web-Room; sonst geht es unten weiter.
+    if (await this.#motor.verbinden(resp, channelId, gen, { ...opts, micBeforeDeafen })) return;
+    if (gen !== this.#connectGen) return;
 
     const room = new Room(this.#roomOptions());
     // Vor room.connect() (dort wird das Ereignis verdrahtet), s. Helfer.
@@ -625,13 +619,7 @@ class VoiceRoom {
     // backgrounded / screen-locked (paired with the unmuted <audio> path in
     // RemoteAudioElements). No-op off mobile.
     setVoiceMediaSession(this.channelName);
-    // Capture a routing snapshot once the OS has settled the route (~2.5s), to
-    // verify the SCO/mode result in the field. No-op off Capacitor-Android.
-    // Tracked so #teardown cancels it on a fast leave/channel-switch.
-    this.#audioDiagTimer = setTimeout(() => {
-      this.#audioDiagTimer = null;
-      void maybeSendAudioDiagnostic();
-    }, 2500);
+    this.#diagnose.planen();
     // Mobile: hold the screen awake so auto-lock can't suspend the mic, and watch
     // for foreground returns to recover a mic the OS muted while backgrounded.
     this.#ensureWakeLock();
@@ -665,6 +653,9 @@ class VoiceRoom {
    *  während der Abfrage macht sie `ueberholt`. */
   async nativUebernehmen(resume: VoiceResume | null): Promise<StartAbgleich> {
     const gen = this.#connectGen;
+    // Android: eine Engine, die den Reload überlebt hat, abbauen; ein Resume
+    // tritt danach frisch bei (`androidMotor.ts::waiseAbbauen`).
+    await this.#motor.waiseAbbauen(() => gen === this.#connectGen);
     const ergebnis = await this.#nativ.uebernehmen(
       resume,
       activeServer.serverId,
@@ -699,8 +690,12 @@ class VoiceRoom {
     // Watch-Party beenden, Resume-Eintrag löschen) — die gilt für beide Wege
     // gleichermassen und darf nicht ein zweites Mal danebenstehen.
     const nativ = this.nativ;
+    // Android-Motor: der Join lief ohne Web-Room. Er spielt den Verlass-Klang
+    // selbst (noch im Anrufkanal) und trennt; der Rest unten gilt für alle.
+    const motorTrug = this.#motor.traegt;
+    const motorHatteRaum = await this.#motor.verlassen(this.#soundCtx);
     const room = this.#room;
-    if (!room && !nativ) {
+    if (!room && !nativ && !motorHatteRaum) {
       // Aufgelegt, bevor der Raum ueberhaupt stand (der Token-Abruf laeuft
       // noch): der zurueckkehrende `connect()` bricht jetzt am Wachposten ab,
       // raeumt aber die schon gesetzte Oberflaeche nicht mehr auf — das tun
@@ -716,7 +711,7 @@ class VoiceRoom {
       }
       return;
     }
-    sounds.play('voice.self_leave', this.#soundCtx);
+    if (!motorTrug) sounds.play('voice.self_leave', this.#soundCtx);
     // Verlassen wir den Voice-Channel, muss ein laufender HQ-Stream mit weg —
     // er ist an genau diesen Channel gebunden. Sonst pusht der Sidecar weiter
     // und der Stream taucht beim Wieder-Verbinden als „live" wieder auf.
@@ -752,9 +747,11 @@ class VoiceRoom {
       });
       return;
     }
-    // Nur noch fuer den Typpruefer: ohne Raum UND ohne nativen Weg ist oben
-    // schon zurueckgekehrt, der native Fall eben. Hier bleibt der Web-Weg.
-    if (!room) return;
+    // Ohne Raum bleibt nur der Android-Motor — oben schon getrennt.
+    if (!room) {
+      this.#teardown();
+      return;
+    }
     try {
       await room.disconnect();
     } finally {
@@ -780,6 +777,9 @@ class VoiceRoom {
   async setMicEnabled(on: boolean): Promise<void> {
     // iOS, nativer Weg: die Spur gehört der Hülle, nicht einem JS-Raum.
     if (this.nativ) return this.#nativ.befehle.mikrofon(on);
+
+    // Android-Motor: über die Bridge (`androidMotor.ts::mikrofon`).
+    if (this.#motor.traegt) return this.#motor.mikrofon(on);
     const room = this.#room;
     if (!room) return;
     // Optimistic UI: micEnabled synchron vor dem await setzen, sonst blitzt
@@ -915,6 +915,8 @@ class VoiceRoom {
     // `setMicEnabled` und damit nativ), was den Fehler besonders gut
     // versteckte.
     if (this.nativ) this.#nativ.befehle.taub(on);
+    // Android-Motor: über die Bridge. Web: die <audio>-Elemente.
+    else if (this.#motor.traegt) this.#motor.taub(on);
     else this.#audioEls.setDeafened(on);
     sounds.play(on ? 'voice.self_deafen' : 'voice.self_undeafen', this.#soundCtx);
     this.#publishSelfState();
@@ -1291,17 +1293,16 @@ class VoiceRoom {
       clearTimeout(this.#refreshTimer);
       this.#refreshTimer = null;
     }
-    if (this.#audioDiagTimer !== null) {
-      clearTimeout(this.#audioDiagTimer);
-      this.#audioDiagTimer = null;
-    }
+    this.#diagnose.abbrechen();
     this.#signal.abbauen();
     this.#remoteSpeaking.clear();
     this.#audioEls.destroy();
     clearVoiceMediaSession();
     // Android: release MODE_IN_COMMUNICATION + the comm device so the phone
-    // leaves call-mode after we hang up. No-op off Capacitor-Android.
-    void setVoiceActive(false);
+    // leaves call-mode after we hang up. No-op off Capacitor-Android. Trug der
+    // Motor die Sitzung, gehört der Modus dem SDK — nur der Mic-Dienst geht.
+    if (this.#motor.abbauen()) void setMicService(false);
+    else void setVoiceActive(false);
     // Wake-Lock freigeben, BEVOR die Referenz fällt — sonst bleibt das Display
     // für die restliche Sitzung an (der Griff ist dann nicht mehr erreichbar).
     this.#releaseWakeLock?.();

@@ -81,6 +81,7 @@
   import { installiereLesestandSync } from '$lib/api/lesestand';
   import { installiereShareEmpfang } from '$lib/platform/shareEmpfang';
   import { installiereFcmPush } from '$lib/platform/fcm';
+  import { isCapacitorAndroid } from '$lib/platform/runtime';
   import AnrufOverlay from '$lib/components/anrufe/AnrufOverlay.svelte';
   import { page } from '$app/state';
   import UpdateBanner from '$lib/components/server/UpdateBanner.svelte';
@@ -374,37 +375,54 @@
     // "Cannot use import statement outside a module". The prod build bundles
     // it into a single classic script, so `classic` is correct there.
     if ('serviceWorker' in navigator) {
-      try {
-        await navigator.serviceWorker.register('/service-worker.js', {
-          scope: '/',
-          type: dev ? 'module' : 'classic'
-        });
-      } catch {
-        // Dev sessions / Electron without SW — fine, push falls back to no-op.
-      }
-      _swMessageHandler = (ev: MessageEvent) => {
-        // Security-Audit 2026-09-16: nur Botschaften vom EIGENEN Origin
-        // befolgen (Defense in depth — ein fremder Frame/Worker soll über
-        // diesen Kanal keine Navigation anstoßen können).
-        if (ev.origin !== location.origin) return;
-        const data = ev.data as {
-          type?: string;
-          channel_id?: string;
-          guild_id?: string | null;
-          url?: string | null;
-        };
-        // Bughunt 2026-09-20: auch das reine `url`-Ziel durchreichen —
-        // Freund-Events tragen keine channel_id, nur target_url. Vorher
-        // fokussierte der Klick nur den Tab, ohne zu /app/friends zu gehen.
-        if (data?.type === 'navigateTo') {
-          navigateToFromNotification(
-            data.channel_id ?? '',
-            data.guild_id ?? null,
-            data.url ?? null
-          );
+      if (isCapacitorAndroid()) {
+        // APK: KEIN Service-Worker — er cached vite-dev-Module und serviert
+        // der WebView sonst STALE Bundles über jeden Reload hinweg (der
+        // ganztägige „Popup kommt nicht“-Befund vom 2026-10-09). Push läuft
+        // im APK über FCM (@capacitor-firebase/messaging), nicht über den
+        // Web-Push-Worker. Best-effort-Heilung: alte Registration + Caches
+        // dieses Geräts entfernen.
+        try {
+          const alte = await navigator.serviceWorker.getRegistrations();
+          for (const r of alte) await r.unregister();
+          const cacheKeys = await caches.keys();
+          for (const k of cacheKeys) await caches.delete(k);
+        } catch {
+          // best-effort — ohne SW ist der Zustand ohnehin sauber
         }
-      };
-      navigator.serviceWorker.addEventListener('message', _swMessageHandler);
+      } else {
+        try {
+          await navigator.serviceWorker.register('/service-worker.js', {
+            scope: '/',
+            type: dev ? 'module' : 'classic'
+          });
+        } catch {
+          // Dev sessions / Electron without SW — fine, push falls back to no-op.
+        }
+        _swMessageHandler = (ev: MessageEvent) => {
+          // Security-Audit 2026-09-16: nur Botschaften vom EIGENEN Origin
+          // befolgen (Defense in depth — ein fremder Frame/Worker soll über
+          // diesen Kanal keine Navigation anstoßen können).
+          if (ev.origin !== location.origin) return;
+          const data = ev.data as {
+            type?: string;
+            channel_id?: string;
+            guild_id?: string | null;
+            url?: string | null;
+          };
+          // Bughunt 2026-09-20: auch das reine `url`-Ziel durchreichen —
+          // Freund-Events tragen keine channel_id, nur target_url. Vorher
+          // fokussierte der Klick nur den Tab, ohne zu /app/friends zu gehen.
+          if (data?.type === 'navigateTo') {
+            navigateToFromNotification(
+              data.channel_id ?? '',
+              data.guild_id ?? null,
+              data.url ?? null
+            );
+          }
+        };
+        navigator.serviceWorker.addEventListener('message', _swMessageHandler);
+      }
     }
 
     // Electron path: bridge `pulse.notify.onClick` to the same router. Safe

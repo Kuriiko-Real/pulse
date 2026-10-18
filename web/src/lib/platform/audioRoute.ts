@@ -18,7 +18,7 @@ import { errText } from '$lib/utils/errText';
  * das Ergebnis (Mode, Communication-Device, SCO-Status) für die „im Auto zu
  * leise"-Diagnose. Nur unter Capacitor-Android aktiv, sonst No-op.
  */
-import { registerPlugin } from '@capacitor/core';
+import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { request } from '$lib/api/client';
 import { isCapacitorAndroid, isCapacitorIOS } from './runtime';
 import { nativerSprachwegDa, spracheAusgabe } from './iosSprache';
@@ -62,6 +62,8 @@ type AudioDiagnostic = {
     music: { volume: number; max: number };
   };
   outputDevices: { type: string }[];
+  /** Nativer Voice-Motor (P5): verbunden = Ton/Mic laufen über den Anrufkanal. */
+  nativeVoice?: { connected: boolean };
   /** Web-seitiger Fehler beim letzten setVoiceActive (z.B. Plugin nicht geladen).
    *  Nur belegt, wenn der Aufruf scheiterte — wird vom Web in den Dump gesetzt. */
   setVoiceActiveError?: string | null;
@@ -72,7 +74,17 @@ interface AudioRoutePlugin {
   getRoute(): Promise<{ route: AudioRoute }>;
   listRoutes(): Promise<AudioRouteList>;
   setVoiceActive(opts: { active: boolean }): Promise<void>;
+  /** Nur der Mic-Foreground-Service — für den nativen Voice-Motor (das SDK
+   *  besitzt den Audio-Modus selbst, der Router darf nicht angerufen werden). */
+  setMicService(opts: { active: boolean }): Promise<void>;
   snapshot(): Promise<AudioDiagnostic>;
+  /** "routesChanged" — nativer Push, wenn sich Ausgabegeräte ändern (BT
+   *  verbindet/trennt sich). APK >= 2026-10-09; alte APKs feuern nie →
+   *  harmlos (Version-Skew, §5.3). */
+  addListener(
+    eventName: 'routesChanged',
+    listenerFunc: () => void
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
 }
 
 const plugin = registerPlugin<AudioRoutePlugin>('AudioRoute');
@@ -170,6 +182,34 @@ export async function setVoiceActive(active: boolean): Promise<void> {
   } catch (e) {
     lastSetVoiceActiveError = errText(e);
     console.warn('[audioRoute] setVoiceActive failed', e);
+  }
+}
+
+/**
+ * Nur den Mic-Foreground-Service starten/stoppen — ohne den Router (und damit
+ * den Audio-Modus) anzufassen. Der native Voice-Motor besitzt den Modus selbst
+ * (Übergabe §5.2), braucht aber denselben Screen-Lock-Schutz für die Aufnahme.
+ * No-op outside the Android wrapper.
+ */
+export async function setMicService(active: boolean): Promise<void> {
+  if (!isCapacitorAndroid()) return;
+  try {
+    await plugin.setMicService({ active });
+  } catch (e) {
+    console.warn('[audioRoute] setMicService failed', e);
+  }
+}
+
+/** Subscribe to native output-device changes (BT/headset connects or
+ *  disconnects). No-op outside the Android wrapper — und auf alten APKs
+ *  (< 2026-10-09) wird nie gefeuert; der devicechange-Fallback im Store
+ *  bleibt dann der einzige Weg. */
+export async function onRoutesChanged(cb: () => void): Promise<void> {
+  if (!isCapacitorAndroid()) return;
+  try {
+    await plugin.addListener('routesChanged', cb);
+  } catch (e) {
+    console.warn('[audioRoute] routesChanged subscribe failed', e);
   }
 }
 
